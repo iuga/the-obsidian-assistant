@@ -52,6 +52,8 @@
 }
 
 .assistant-message-row.is-assistant .assistant-message-stack {
+	width: 100%;
+	max-width: 96%;
 	align-items: flex-start;
 }
 
@@ -73,6 +75,7 @@
 }
 
 .assistant-message-row.is-assistant .assistant-message-bubble {
+	width: 100%;
 	background: var(--background-secondary);
 	color: var(--text-normal);
 }
@@ -89,8 +92,22 @@
 }
 
 .assistant-message-content {
+	min-width: 0;
 	white-space: pre-wrap;
 	word-break: break-word;
+}
+
+.assistant-message-content.markdown-rendered {
+	width: 100%;
+	white-space: normal;
+}
+
+.assistant-message-content.markdown-rendered > :first-child {
+	margin-top: 0;
+}
+
+.assistant-message-content.markdown-rendered > :last-child {
+	margin-bottom: 0;
 }
 
 .assistant-chat-warning {

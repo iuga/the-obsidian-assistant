@@ -1,4 +1,4 @@
-import { ItemView, setIcon, TFile, WorkspaceLeaf } from "obsidian";
+import { ItemView, MarkdownRenderer, setIcon, TFile, WorkspaceLeaf } from "obsidian";
 import { Ollama } from "ollama/dist/browser.mjs";
 import type { ModelResponse } from "ollama/dist/browser.d.ts";
 import AssistantPlugin from "./main";
@@ -161,7 +161,14 @@ export class AssistantView extends ItemView {
 		const bubble = messageStack.createDiv({ cls: "assistant-message-bubble" });
 		const iconEl = bubble.createDiv({ cls: "assistant-message-icon" });
 		setIcon(iconEl, message.role === "user" ? "user" : "origami");
-		bubble.createDiv({ cls: "assistant-message-content", text: message.content });
+		const contentEl = bubble.createDiv({ cls: "assistant-message-content" });
+		if (message.role === "assistant") {
+			contentEl.addClass("markdown-rendered");
+			void MarkdownRenderer.render(this.plugin.app, message.content, contentEl, "", this.plugin);
+			return;
+		}
+
+		contentEl.setText(message.content);
 	}
 
 	private renderComposer(containerEl: HTMLElement): void {
