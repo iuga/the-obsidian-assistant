@@ -1,4 +1,4 @@
-import { ItemView, setIcon, WorkspaceLeaf } from "obsidian";
+import { ItemView, setIcon, TFile, WorkspaceLeaf } from "obsidian";
 import { Ollama } from "ollama/dist/browser.mjs";
 import type { ModelResponse } from "ollama/dist/browser.d.ts";
 import AssistantPlugin from "./main";
@@ -17,9 +17,15 @@ interface SettingStep {
 
 type ChatRole = "user" | "assistant" | "warning";
 
+interface MentionedNote {
+	path: string;
+	basename: string;
+}
+
 interface ChatMessage {
 	role: ChatRole;
 	content: string;
+	mentions?: MentionedNote[];
 }
 
 const SETTING_STEPS: SettingStep[] = [
@@ -36,6 +42,9 @@ export class AssistantView extends ItemView {
 	private chatHistoryEl: HTMLElement | null = null;
 	private composerInputEl: HTMLTextAreaElement | null = null;
 	private sendButtonEl: HTMLButtonElement | null = null;
+	private mentionTagsEl: HTMLElement | null = null;
+	private mentionPopoverEl: HTMLElement | null = null;
+	private selectedNoteFiles: TFile[] = [];
 	private isStreaming = false;
 	private healthIntervalId: number | null = null;
 	private statusEl: HTMLElement | null = null;
@@ -145,7 +154,11 @@ export class AssistantView extends ItemView {
 		}
 
 		const row = this.chatHistoryEl.createDiv({ cls: `assistant-message-row is-${message.role}` });
-		const bubble = row.createDiv({ cls: "assistant-message-bubble" });
+		const messageStack = row.createDiv({ cls: "assistant-message-stack" });
+		if (message.role === "user" && message.mentions && message.mentions.length > 0) {
+			this.renderMentionTagList(messageStack, message.mentions, false);
+		}
+		const bubble = messageStack.createDiv({ cls: "assistant-message-bubble" });
 		const iconEl = bubble.createDiv({ cls: "assistant-message-icon" });
 		setIcon(iconEl, message.role === "user" ? "user" : "origami");
 		bubble.createDiv({ cls: "assistant-message-content", text: message.content });
@@ -153,17 +166,20 @@ export class AssistantView extends ItemView {
 
 	private renderComposer(containerEl: HTMLElement): void {
 		const composer = containerEl.createDiv({ cls: "assistant-composer" });
+		this.mentionTagsEl = composer.createDiv({ cls: "assistant-mention-tags" });
+		this.renderMentionTags();
 		composer.createDiv({ cls: "assistant-attachments" });
 		this.composerInputEl = composer.createEl("textarea", {
 			cls: "assistant-message-input",
 			attr: { placeholder: "Ask anything..." },
 		});
 		const actionsRow = composer.createDiv({ cls: "assistant-composer-actions" });
-		const attachmentButton = actionsRow.createEl("button", {
+		const mentionButton = actionsRow.createEl("button", {
 			cls: "assistant-composer-button",
-			attr: { title: "Add attachment", "aria-label": "Add attachment" },
+			attr: { title: "Mention Notes", "aria-label": "Mention Notes" },
 		});
-		setIcon(attachmentButton, "paperclip");
+		setIcon(mentionButton, "at-sign");
+		mentionButton.addEventListener("click", () => this.toggleMentionPopover(composer));
 		this.sendButtonEl = actionsRow.createEl("button", {
 			cls: "assistant-send-button",
 			attr: { title: "Type a message...", "aria-label": "Type a message..." },
@@ -455,12 +471,131 @@ export class AssistantView extends ItemView {
 	private showConversations(): void {
 	}
 
+	private renderMentionTags(): void {
+		if (!this.mentionTagsEl) {
+			return;
+		}
+
+		this.mentionTagsEl.empty();
+		this.renderMentionTagList(this.mentionTagsEl, this.selectedNoteFiles.map((file) => this.toMentionedNote(file)), true);
+	}
+
+	private renderMentionTagList(containerEl: HTMLElement, mentions: MentionedNote[], isRemovable: boolean): void {
+		mentions.forEach((mention) => {
+			const tag = containerEl.createEl(isRemovable ? "button" : "div", {
+				cls: "assistant-mention-tag",
+				attr: { title: mention.path, "aria-label": isRemovable ? `Remove ${mention.basename}` : mention.basename },
+			});
+			const noteIcon = tag.createSpan({ cls: "assistant-mention-tag-icon" });
+			setIcon(noteIcon, "sticky-note");
+			tag.createSpan({ cls: "assistant-mention-tag-title", text: mention.basename });
+
+			if (!isRemovable) {
+				return;
+			}
+
+			const removeIcon = tag.createSpan({ cls: "assistant-mention-tag-remove" });
+			setIcon(removeIcon, "x");
+			tag.addEventListener("click", () => this.removeMentionedNoteByPath(mention.path));
+		});
+	}
+
+	private toggleMentionPopover(composerEl: HTMLElement): void {
+		if (this.mentionPopoverEl) {
+			this.closeMentionPopover();
+			return;
+		}
+
+		this.renderMentionPopover(composerEl);
+	}
+
+	private renderMentionPopover(composerEl: HTMLElement): void {
+		this.closeMentionPopover();
+		const popover = composerEl.createDiv({ cls: "assistant-mention-popover" });
+		this.mentionPopoverEl = popover;
+		const filterInput = popover.createEl("input", {
+			cls: "assistant-mention-filter",
+			attr: { type: "text", placeholder: "Filter notes..." },
+		});
+		const notesEl = popover.createDiv({ cls: "assistant-mention-results" });
+		const renderNotes = () => this.renderMentionNoteResults(notesEl, filterInput.value);
+
+		filterInput.addEventListener("input", renderNotes);
+		renderNotes();
+		filterInput.focus();
+	}
+
+	private renderMentionNoteResults(containerEl: HTMLElement, query: string): void {
+		containerEl.empty();
+		const normalizedQuery = query.trim().toLowerCase();
+		const unavailablePaths = this.getUnavailableMentionPaths();
+		const files = this.plugin.app.vault.getMarkdownFiles()
+			.filter((file) => !unavailablePaths.has(file.path))
+			.filter((file) => {
+				if (!normalizedQuery) {
+					return true;
+				}
+
+				return file.basename.toLowerCase().includes(normalizedQuery) || file.path.toLowerCase().includes(normalizedQuery);
+			})
+			.sort((first, second) => first.basename.localeCompare(second.basename));
+
+		if (files.length === 0) {
+			containerEl.createDiv({ cls: "assistant-mention-empty", text: "No notes found" });
+			return;
+		}
+
+		files.forEach((file) => {
+			const noteButton = containerEl.createEl("button", {
+				cls: "assistant-mention-result",
+				attr: { title: file.path, "aria-label": `Mention ${file.basename}` },
+			});
+			noteButton.createSpan({ cls: "assistant-mention-result-title", text: file.basename });
+			noteButton.createSpan({ cls: "assistant-mention-result-path", text: file.path });
+			noteButton.addEventListener("click", () => this.addMentionedNote(file));
+		});
+	}
+
+	private addMentionedNote(file: TFile): void {
+		if (this.getUnavailableMentionPaths().has(file.path)) {
+			this.closeMentionPopover();
+			this.composerInputEl?.focus();
+			return;
+		}
+
+		this.selectedNoteFiles = [...this.selectedNoteFiles, file];
+		this.renderMentionTags();
+		this.updateSendButtonState();
+		this.closeMentionPopover();
+		this.composerInputEl?.focus();
+	}
+
+	private removeMentionedNoteByPath(path: string): void {
+		this.selectedNoteFiles = this.selectedNoteFiles.filter((selectedFile) => selectedFile.path !== path);
+		this.renderMentionTags();
+		this.updateSendButtonState();
+		this.composerInputEl?.focus();
+	}
+
+	private closeMentionPopover(): void {
+		this.mentionPopoverEl?.remove();
+		this.mentionPopoverEl = null;
+	}
+
+	private getUnavailableMentionPaths(): Set<string> {
+		const paths = new Set(this.selectedNoteFiles.map((file) => file.path));
+		this.messages.forEach((message) => {
+			message.mentions?.forEach((mention) => paths.add(mention.path));
+		});
+		return paths;
+	}
+
 	private updateSendButtonState(): void {
 		if (!this.sendButtonEl || !this.composerInputEl) {
 			return;
 		}
 
-		const hasMessage = this.composerInputEl.value.trim().length > 0;
+		const hasMessage = this.composerInputEl.value.trim().length > 0 || this.selectedNoteFiles.length > 0;
 		this.sendButtonEl.disabled = !hasMessage || this.isStreaming || !this.isHealthy;
 		const tooltip = this.isHealthy ? (hasMessage ? "Send message" : "Type a message...") : "Ollama is unreachable";
 		this.sendButtonEl.title = tooltip;
@@ -473,7 +608,8 @@ export class AssistantView extends ItemView {
 		}
 
 		const content = this.composerInputEl.value.trim();
-		if (!content) {
+		const mentionedNoteFiles = [...this.selectedNoteFiles];
+		if (!content && mentionedNoteFiles.length === 0) {
 			this.updateSendButtonState();
 			return;
 		}
@@ -483,22 +619,34 @@ export class AssistantView extends ItemView {
 			return;
 		}
 
+		const mentionSnapshots = mentionedNoteFiles.map((file) => this.toMentionedNote(file));
+
 		this.composerInputEl.value = "";
-		this.messages.push({ role: "user", content });
-		const assistantMessage: ChatMessage = { role: "assistant", content: "" };
+		this.selectedNoteFiles = [];
+		this.renderMentionTags();
+		this.closeMentionPopover();
+		this.messages.push({ role: "user", content, mentions: mentionSnapshots });
+		const assistantMessage: ChatMessage = { role: "assistant", content: "Thinking..." };
 		this.messages.push(assistantMessage);
 		this.isStreaming = true;
 		this.updateSendButtonState();
 		this.renderMessages();
 
 		try {
+			const chatMessages = await this.buildOllamaMessages(assistantMessage);
 			const stream = await this.createOllamaClient().chat({
 				model: this.plugin.settings.ollamaChatModel,
-				messages: this.messages.map((message) => ({ role: message.role, content: message.content })),
+				messages: chatMessages,
 				stream: true,
 			});
 
+			let hasStartedStreaming = false;
 			for await (const chunk of stream) {
+				if (!hasStartedStreaming) {
+					assistantMessage.content = "";
+					hasStartedStreaming = true;
+				}
+
 				assistantMessage.content += chunk.message.content;
 				this.renderMessages();
 			}
@@ -510,6 +658,46 @@ export class AssistantView extends ItemView {
 			this.isStreaming = false;
 			this.updateSendButtonState();
 		}
+	}
+
+	private async buildOllamaMessages(excludedMessage: ChatMessage): Promise<Array<{ role: "user" | "assistant"; content: string }>> {
+		const messages = this.messages.filter((message) => message.role !== "warning" && message !== excludedMessage);
+		return Promise.all(messages.map(async (message) => ({
+			role: message.role as "user" | "assistant",
+			content: await this.buildOllamaMessageContent(message),
+		})));
+	}
+
+	private async buildOllamaMessageContent(message: ChatMessage): Promise<string> {
+		const mentions = message.mentions ?? [];
+		if (mentions.length === 0) {
+			return message.content;
+		}
+
+		const noteContext = await this.getMentionedNotesContext(mentions);
+		return `${noteContext}\n\n${message.content}`.trim();
+	}
+
+	private async getMentionedNotesContext(mentions: MentionedNote[]): Promise<string> {
+		if (mentions.length === 0) {
+			return "";
+		}
+
+		const noteContents = await Promise.all(mentions.map(async (mention) => {
+			const file = this.plugin.app.vault.getAbstractFileByPath(mention.path);
+			if (!(file instanceof TFile)) {
+				return `# ${mention.basename}\n\nNote not found: ${mention.path}`;
+			}
+
+			const content = await this.plugin.app.vault.cachedRead(file);
+			return `# ${file.basename}\n\n${content}`;
+		}));
+
+		return `Use these Obsidian notes as context:\n\n${noteContents.join("\n\n---\n\n")}`;
+	}
+
+	private toMentionedNote(file: TFile): MentionedNote {
+		return { path: file.path, basename: file.basename };
 	}
 
 	private scrollChatToBottom(): void {
