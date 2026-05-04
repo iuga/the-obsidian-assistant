@@ -1,8 +1,227 @@
-/*
+.assistant-view {
+	height: 100%;
+	background: var(--background-primary);
+	color: var(--text-normal);
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.assistant-main {
+	display: flex;
+	height: 100%;
+	flex-direction: column;
+}
 
-If your plugin does not need CSS, delete this file.
+.assistant-header {
+	margin: 0;
+	padding: var(--size-4-3) var(--size-4-4);
+	border-bottom: 1px solid var(--background-modifier-border);
+	font-size: var(--font-ui-medium);
+	font-weight: var(--font-semibold);
+}
 
-*/
+.assistant-body {
+	flex: 1;
+}
+
+.assistant-welcome,
+.assistant-settings {
+	display: flex;
+	min-height: 100%;
+	box-sizing: border-box;
+	flex-direction: column;
+	justify-content: center;
+	gap: var(--size-4-6);
+	padding: var(--size-4-8);
+}
+
+.assistant-welcome {
+	align-items: center;
+	text-align: center;
+}
+
+.assistant-settings {
+	justify-content: flex-start;
+	padding-top: var(--size-4-8);
+}
+
+.assistant-welcome-icon,
+.assistant-settings-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-accent);
+}
+
+.assistant-welcome-icon svg {
+	width: 96px;
+	height: 96px;
+}
+
+.assistant-settings-icon svg {
+	width: 64px;
+	height: 64px;
+}
+
+.assistant-welcome h2 {
+	margin: 0;
+	color: var(--text-normal);
+	font-size: var(--font-ui-large);
+}
+
+.assistant-welcome p {
+	margin: 0;
+	color: var(--text-muted);
+}
+
+.assistant-vertical-steps {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+}
+
+.assistant-vertical-step {
+	display: grid;
+	grid-template-columns: 36px minmax(0, 1fr);
+	gap: var(--size-4-3);
+}
+
+.assistant-step-rail {
+	position: relative;
+	display: flex;
+	justify-content: center;
+}
+
+.assistant-step-rail::after {
+	position: absolute;
+	top: 36px;
+	bottom: calc(-1 * var(--size-4-2));
+	width: 2px;
+	background: var(--background-modifier-border);
+	content: "";
+}
+
+.assistant-vertical-step:last-child .assistant-step-rail::after {
+	display: none;
+}
+
+.assistant-step-node {
+	z-index: 1;
+	display: flex;
+	width: 32px;
+	height: 32px;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+}
+
+.assistant-vertical-step.is-active .assistant-step-node,
+.assistant-vertical-step.is-complete .assistant-step-node {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.assistant-step-card {
+	display: flex;
+	min-height: 48px;
+	box-sizing: border-box;
+	flex-direction: column;
+	justify-content: center;
+	gap: var(--size-4-3);
+	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background: var(--background-secondary);
+}
+
+.assistant-vertical-step.is-active .assistant-step-card {
+	border-color: var(--text-accent);
+}
+
+.assistant-vertical-step.is-clickable .assistant-step-card {
+	cursor: pointer;
+}
+
+.assistant-step-card-header {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+}
+
+.assistant-step-card-header strong {
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+}
+
+.assistant-step-message,
+.assistant-step-value {
+	overflow: hidden;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.assistant-step-editor {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-3);
+}
+
+.assistant-step-editor input,
+.assistant-step-editor select {
+	width: 100%;
+}
+
+.assistant-onboarding-error:empty {
+	display: none;
+}
+
+.assistant-hint {
+	display: flex;
+	gap: var(--size-4-2);
+	padding: var(--size-4-3);
+	border-radius: var(--radius-s);
+	background: #e5f2fc;
+	color: #000;
+	font-size: var(--font-ui-small);
+}
+
+.assistant-hint-icon {
+	display: flex;
+	flex: 0 0 auto;
+	padding-top: 1px;
+	color: #000;
+}
+
+.assistant-hint-icon svg {
+	width: 16px;
+	height: 16px;
+}
+
+.assistant-hint-content p,
+.assistant-hint-content ol {
+	margin: 0 0 var(--size-4-2);
+}
+
+.assistant-hint-content ol {
+	padding-inline-start: var(--size-4-5);
+}
+
+.assistant-hint-content code {
+	display: inline-block;
+	padding: var(--size-2-1) var(--size-2-2);
+	border-radius: var(--radius-s);
+	background: rgba(255, 255, 255, 0.6);
+	color: #000;
+}
+
+.assistant-primary-button {
+	align-self: flex-start;
+}
+
+.assistant-welcome .assistant-primary-button {
+	align-self: center;
+}
