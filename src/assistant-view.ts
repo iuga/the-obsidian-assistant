@@ -25,6 +25,9 @@ export class AssistantView extends ItemView {
 	private plugin: AssistantPlugin;
 	private screen: OnboardingScreen = "welcome";
 	private models: ModelResponse[] = [];
+	private healthIntervalId: number | null = null;
+	private statusEl: HTMLElement | null = null;
+	private isHealthy = false;
 
 	constructor(leaf: WorkspaceLeaf, plugin: AssistantPlugin) {
 		super(leaf);
@@ -52,10 +55,12 @@ export class AssistantView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
+		this.stopHealthPolling();
 		this.contentEl.empty();
 	}
 
 	private render(): void {
+		this.stopHealthPolling();
 		this.contentEl.empty();
 		this.contentEl.addClass("assistant-view");
 
@@ -76,8 +81,29 @@ export class AssistantView extends ItemView {
 		this.contentEl.empty();
 		this.contentEl.addClass("assistant-view");
 		const main = this.contentEl.createDiv({ cls: "assistant-main" });
-		main.createEl("h2", { cls: "assistant-header", text: "Assistant" });
+		this.renderAssistantToolbar(main);
 		main.createDiv({ cls: "assistant-body" });
+		this.startHealthPolling();
+	}
+
+	private renderAssistantToolbar(containerEl: HTMLElement): void {
+		const toolbar = containerEl.createDiv({ cls: "assistant-toolbar view-actions" });
+		this.statusEl = toolbar.createDiv({ cls: "view-action clickable-icon assistant-status-icon" });
+		this.statusEl.ariaLabel = "Unhealthy";
+		this.statusEl.title = "Unhealthy";
+		const newChatButton = toolbar.createEl("button", {
+			cls: "view-action clickable-icon",
+			attr: { title: "Start a new conversation", "aria-label": "Start a new conversation" },
+		});
+		setIcon(newChatButton, "plus");
+		newChatButton.addEventListener("click", () => this.startNewChat());
+		const conversationsButton = toolbar.createEl("button", {
+			cls: "view-action clickable-icon",
+			attr: { title: "Show conversations", "aria-label": "Show conversations" },
+		});
+		setIcon(conversationsButton, "text-align-justify");
+		conversationsButton.addEventListener("click", () => this.showConversations());
+		this.updateStatusIcon();
 	}
 
 	private renderWelcome(): void {
@@ -339,6 +365,53 @@ export class AssistantView extends ItemView {
 		const iconEl = hintEl.createDiv({ cls: "assistant-hint-icon" });
 		setIcon(iconEl, "lightbulb");
 		return hintEl.createDiv({ cls: "assistant-hint-content" });
+	}
+
+	private startNewChat(): void {
+	}
+
+	private showConversations(): void {
+	}
+
+	private startHealthPolling(): void {
+		this.stopHealthPolling();
+		void this.updateHealthStatus();
+		this.healthIntervalId = window.setInterval(() => {
+			void this.updateHealthStatus();
+		}, 5000);
+	}
+
+	private stopHealthPolling(): void {
+		if (this.healthIntervalId === null) {
+			return;
+		}
+
+		window.clearInterval(this.healthIntervalId);
+		this.healthIntervalId = null;
+	}
+
+	private async updateHealthStatus(): Promise<void> {
+		try {
+			await this.createOllamaClient().version();
+			this.isHealthy = true;
+		} catch {
+			this.isHealthy = false;
+		}
+
+		this.updateStatusIcon();
+	}
+
+	private updateStatusIcon(): void {
+		if (!this.statusEl) {
+			return;
+		}
+
+		this.statusEl.empty();
+		this.statusEl.toggleClass("is-healthy", this.isHealthy);
+		this.statusEl.toggleClass("is-unhealthy", !this.isHealthy);
+		this.statusEl.ariaLabel = this.isHealthy ? "Healthy" : "Unhealthy";
+		this.statusEl.title = this.isHealthy ? "Healthy" : "Unhealthy";
+		setIcon(this.statusEl, this.isHealthy ? "globe" : "globe-x");
 	}
 
 	private setLoading(button: HTMLButtonElement, isLoading: boolean, loadingText = "Saving..."): void {

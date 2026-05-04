@@ -1,26 +1,11 @@
-.assistant-view {
-	height: 100%;
-	background: var(--background-primary);
-	color: var(--text-normal);
+.assistant-status-icon.is-healthy {
+	color: var(--color-green);
 }
 
-.assistant-main {
-	display: flex;
-	height: 100%;
-	flex-direction: column;
+.assistant-status-icon.is-unhealthy {
+	color: var(--color-red);
 }
 
-.assistant-header {
-	margin: 0;
-	padding: var(--size-4-3) var(--size-4-4);
-	border-bottom: 1px solid var(--background-modifier-border);
-	font-size: var(--font-ui-medium);
-	font-weight: var(--font-semibold);
-}
-
-.assistant-body {
-	flex: 1;
-}
 
 .assistant-welcome,
 .assistant-settings {
