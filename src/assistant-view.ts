@@ -154,12 +154,17 @@ export class AssistantView extends ItemView {
 	private renderComposer(containerEl: HTMLElement): void {
 		const composer = containerEl.createDiv({ cls: "assistant-composer" });
 		composer.createDiv({ cls: "assistant-attachments" });
-		const inputRow = composer.createDiv({ cls: "assistant-input-row" });
-		this.composerInputEl = inputRow.createEl("textarea", {
+		this.composerInputEl = composer.createEl("textarea", {
 			cls: "assistant-message-input",
 			attr: { placeholder: "Ask anything..." },
 		});
-		this.sendButtonEl = inputRow.createEl("button", {
+		const actionsRow = composer.createDiv({ cls: "assistant-composer-actions" });
+		const attachmentButton = actionsRow.createEl("button", {
+			cls: "assistant-composer-button",
+			attr: { title: "Add attachment", "aria-label": "Add attachment" },
+		});
+		setIcon(attachmentButton, "paperclip");
+		this.sendButtonEl = actionsRow.createEl("button", {
 			cls: "assistant-send-button",
 			attr: { title: "Type a message...", "aria-label": "Type a message..." },
 		});
@@ -553,8 +558,43 @@ export class AssistantView extends ItemView {
 		this.statusEl.toggleClass("is-unhealthy", !this.isHealthy);
 		this.statusEl.ariaLabel = this.isHealthy ? "Healthy" : "Unhealthy";
 		this.statusEl.title = this.isHealthy ? "Healthy" : "Unhealthy";
-		setIcon(this.statusEl, this.isHealthy ? "globe" : "globe-2");
+
+		if (this.isHealthy) {
+			setIcon(this.statusEl, "globe");
+		} else {
+			this.statusEl.appendChild(this.createGlobeXIcon());
+		}
+
 		this.updateSendButtonState();
+	}
+
+	private createGlobeXIcon(): SVGElement {
+		const namespace = "http://www.w3.org/2000/svg";
+		const svg = document.createElementNS(namespace, "svg");
+		svg.setAttribute("xmlns", namespace);
+		svg.setAttribute("width", "24");
+		svg.setAttribute("height", "24");
+		svg.setAttribute("viewBox", "0 0 24 24");
+		svg.setAttribute("fill", "none");
+		svg.setAttribute("stroke", "currentColor");
+		svg.setAttribute("stroke-width", "2");
+		svg.setAttribute("stroke-linecap", "round");
+		svg.setAttribute("stroke-linejoin", "round");
+		svg.classList.add("svg-icon", "lucide-globe-x");
+
+		const firstPath = document.createElementNS(namespace, "path");
+		firstPath.setAttribute("d", "m16 3 5 5");
+		svg.appendChild(firstPath);
+
+		const secondPath = document.createElementNS(namespace, "path");
+		secondPath.setAttribute("d", "M2 12h20A10 10 0 1 1 12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 4-10");
+		svg.appendChild(secondPath);
+
+		const thirdPath = document.createElementNS(namespace, "path");
+		thirdPath.setAttribute("d", "m21 3-5 5");
+		svg.appendChild(thirdPath);
+
+		return svg;
 	}
 
 	private setLoading(button: HTMLButtonElement, isLoading: boolean, loadingText = "Saving..."): void {
