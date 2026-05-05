@@ -47,6 +47,7 @@ export class AssistantView extends ItemView {
 	private sendButtonEl: HTMLButtonElement | null = null;
 	private mentionTagsEl: HTMLElement | null = null;
 	private mentionPopoverEl: HTMLElement | null = null;
+	private mentionKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
 	private mentionResultFiles: TFile[] = [];
 	private selectedMentionResultIndex = 0;
 	private selectedNoteFiles: TFile[] = [];
@@ -552,40 +553,47 @@ export class AssistantView extends ItemView {
 			this.selectedMentionResultIndex = 0;
 			renderNotes();
 		});
-		filterInput.addEventListener("keydown", (event) => {
-			if (event.key === "Escape") {
-				event.preventDefault();
-				this.closeMentionPopover();
-				this.composerInputEl?.focus();
-				return;
-			}
-
-			if (event.key === "ArrowDown") {
-				event.preventDefault();
-				this.moveMentionSelection(1, notesEl, filterInput.value);
-				return;
-			}
-
-			if (event.key === "ArrowUp") {
-				event.preventDefault();
-				this.moveMentionSelection(-1, notesEl, filterInput.value);
-				return;
-			}
-
-			if (event.key === "Enter") {
-				event.preventDefault();
-				const selectedFile = this.mentionResultFiles[this.selectedMentionResultIndex];
-				if (selectedFile) {
-					this.addMentionedNote(selectedFile);
-					return;
-				}
-
-				this.closeMentionPopover();
-				this.composerInputEl?.focus();
-			}
-		});
+		this.mentionKeydownHandler = (event: KeyboardEvent) => this.handleMentionPopoverKeydown(event, notesEl, filterInput.value);
+		window.addEventListener("keydown", this.mentionKeydownHandler, true);
 		renderNotes();
 		filterInput.focus();
+	}
+
+	private handleMentionPopoverKeydown(event: KeyboardEvent, notesEl: HTMLElement, query: string): void {
+		if (event.key === "Escape") {
+			event.preventDefault();
+			event.stopPropagation();
+			this.closeMentionPopover();
+			this.composerInputEl?.focus();
+			return;
+		}
+
+		if (event.key === "ArrowDown") {
+			event.preventDefault();
+			event.stopPropagation();
+			this.moveMentionSelection(1, notesEl, query);
+			return;
+		}
+
+		if (event.key === "ArrowUp") {
+			event.preventDefault();
+			event.stopPropagation();
+			this.moveMentionSelection(-1, notesEl, query);
+			return;
+		}
+
+		if (event.key === "Enter") {
+			event.preventDefault();
+			event.stopPropagation();
+			const selectedFile = this.mentionResultFiles[this.selectedMentionResultIndex];
+			if (selectedFile) {
+				this.addMentionedNote(selectedFile);
+				return;
+			}
+
+			this.closeMentionPopover();
+			this.composerInputEl?.focus();
+		}
 	}
 
 	private renderMentionNoteResults(containerEl: HTMLElement, query: string): void {
@@ -613,15 +621,15 @@ export class AssistantView extends ItemView {
 		files.forEach((file, index) => {
 			const noteButton = containerEl.createEl("button", {
 				cls: "assistant-mention-result",
-				attr: { title: file.path, "aria-label": `Mention ${file.path}` },
+				attr: { title: file.path, "aria-label": `Mention ${file.path}`, type: "button" },
 			});
 			noteButton.toggleClass("is-selected", index === this.selectedMentionResultIndex);
 			noteButton.createSpan({ cls: "assistant-mention-result-path", text: file.path });
-			noteButton.addEventListener("mouseenter", () => {
-				this.selectedMentionResultIndex = index;
-				this.renderMentionNoteResults(containerEl, query);
+			noteButton.addEventListener("click", (event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				this.addMentionedNote(file);
 			});
-			noteButton.addEventListener("click", () => this.addMentionedNote(file));
 		});
 	}
 
@@ -658,6 +666,11 @@ export class AssistantView extends ItemView {
 	}
 
 	private closeMentionPopover(): void {
+		if (this.mentionKeydownHandler) {
+			window.removeEventListener("keydown", this.mentionKeydownHandler, true);
+			this.mentionKeydownHandler = null;
+		}
+
 		this.mentionPopoverEl?.remove();
 		this.mentionPopoverEl = null;
 		this.mentionResultFiles = [];
@@ -780,12 +793,19 @@ export class AssistantView extends ItemView {
 		return Math.max(1, Math.round((Date.now() - startedAt) / 1000));
 	}
 
-	private async buildOllamaMessages(excludedMessage: ChatMessage): Promise<Array<{ role: "user" | "assistant"; content: string }>> {
+	private async buildOllamaMessages(excludedMessage: ChatMessage): Promise<Array<{ role: "system" | "user" | "assistant"; content: string }>> {
 		const messages = this.messages.filter((message) => message.role !== "warning" && message !== excludedMessage);
-		return Promise.all(messages.map(async (message) => ({
+		const chatMessages = await Promise.all(messages.map(async (message) => ({
 			role: message.role as "user" | "assistant",
 			content: await this.buildOllamaMessageContent(message),
 		})));
+		const systemPrompt = this.plugin.settings.chatSystemPrompt.trim();
+
+		if (!systemPrompt) {
+			return chatMessages;
+		}
+
+		return [{ role: "system", content: systemPrompt }, ...chatMessages];
 	}
 
 	private async buildOllamaMessageContent(message: ChatMessage): Promise<string> {

@@ -60,5 +60,19 @@ export class AssistantSettingTab extends PluginSettingTab {
 					this.plugin.settings.ollamaThinking = value;
 					await this.plugin.saveSettings();
 				}));
+
+		new Setting(containerEl)
+			.setName("System prompt")
+			.setDesc("Instructions sent before each chat.")
+			.addTextArea((textArea) => {
+				textArea
+					.setValue(this.plugin.settings.chatSystemPrompt)
+					.onChange(async (value) => {
+						this.plugin.settings.chatSystemPrompt = value;
+						await this.plugin.saveSettings();
+					});
+				textArea.inputEl.rows = 8;
+				textArea.inputEl.addClass("assistant-settings-prompt");
+			});
 	}
 }
