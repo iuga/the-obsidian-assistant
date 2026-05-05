@@ -14,11 +14,13 @@ export class AssistantSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h2", { text: "Assistant settings" });
+		new Setting(containerEl)
+			.setName("Assistant")
+			.setHeading();
 
 		new Setting(containerEl)
 			.setName("Ollama host")
-			.setDesc("URL where Ollama is running.")
+			.setDesc("Host for ollama.")
 			.addText((text) => text
 				.setPlaceholder(ONBOARDING_DEFAULTS.ollamaHost)
 				.setValue(this.plugin.settings.ollamaHost)
@@ -50,8 +52,8 @@ export class AssistantSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName("Enable thinking")
-			.setDesc("Ask supported Ollama models to stream their thinking separately.")
+			.setName("Model thinking")
+			.setDesc("Reasoning stream for supported ollama models.")
 			.addToggle((toggle) => toggle
 				.setValue(this.plugin.settings.ollamaThinking)
 				.onChange(async (value) => {

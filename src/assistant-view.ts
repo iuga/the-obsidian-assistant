@@ -2,7 +2,7 @@ import { ItemView, MarkdownRenderer, setIcon, TFile, WorkspaceLeaf } from "obsid
 import { Ollama } from "ollama/dist/browser.mjs";
 import type { ModelResponse } from "ollama/dist/browser.d.ts";
 import AssistantPlugin from "./main";
-import { AssistantPluginSettings, ONBOARDING_DEFAULTS } from "./settings";
+import { ONBOARDING_DEFAULTS } from "./settings";
 
 export const ASSISTANT_VIEW_TYPE = "assistant-view";
 
@@ -155,7 +155,7 @@ export class AssistantView extends ItemView {
 		const contentEl = bubble.createDiv({ cls: "assistant-message-content" });
 		if (message.role === "assistant") {
 			contentEl.addClass("markdown-rendered");
-			void MarkdownRenderer.render(this.plugin.app, message.content, contentEl, "", this.plugin);
+			void MarkdownRenderer.render(this.plugin.app, message.content, contentEl, "", this);
 			return;
 		}
 
@@ -175,7 +175,7 @@ export class AssistantView extends ItemView {
 			}, 0);
 		});
 		const contentEl = details.createDiv({ cls: "assistant-thinking-content markdown-rendered" });
-		void MarkdownRenderer.render(this.plugin.app, message.thinking ?? "", contentEl, "", this.plugin);
+		void MarkdownRenderer.render(this.plugin.app, message.thinking ?? "", contentEl, "", this);
 	}
 
 	private renderComposer(containerEl: HTMLElement): void {
@@ -197,7 +197,7 @@ export class AssistantView extends ItemView {
 		newConversationButton.addEventListener("click", () => this.startNewChat());
 		const mentionButton = leftActions.createEl("button", {
 			cls: "assistant-composer-button",
-			attr: { title: "Mention Notes", "aria-label": "Mention Notes" },
+			attr: { title: "Mention notes", "aria-label": "Mention notes" },
 		});
 		setIcon(mentionButton, "at-sign");
 		mentionButton.addEventListener("click", () => this.toggleMentionPopover(composer));
