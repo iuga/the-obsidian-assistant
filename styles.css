@@ -84,6 +84,8 @@
 	min-width: 0;
 	white-space: pre-wrap;
 	word-break: break-word;
+	-webkit-user-select: text;
+	user-select: text;
 }
 
 .assistant-message-content.markdown-rendered {
@@ -129,6 +131,8 @@
 .assistant-thinking-content {
 	margin-top: var(--size-4-2);
 	word-break: break-word;
+	-webkit-user-select: text;
+	user-select: text;
 }
 
 .assistant-thinking-content > :first-child {
