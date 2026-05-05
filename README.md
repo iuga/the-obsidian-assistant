@@ -1,90 +1,98 @@
-# Obsidian Sample Plugin
+# The Obsidian Assistant
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+The Obsidian Assistant turns your vault into a local chat workspace. 
+It connects Obsidian to [Ollama](https://ollama.com/) so you can ask questions, mention specific notes, and keep the model grounded in the files you choose.
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+The plugin is designed around privacy-first usage: your selected note content is sent to the Ollama host you configure, which can run entirely on your machine.
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+## Features
 
-## First time developing plugins?
+### Chat with a local Ollama model
 
-Quick starting guide for new plugin devs:
+- Open the Assistant view from the ribbon icon.
+- Send chat messages to your configured Ollama model.
+- Stream responses as they are generated.
+- Render assistant responses as Markdown.
+- Start a fresh conversation from the composer.
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+### Mention notes as context
 
-## Releasing new releases
+- Use **Mention Notes** to search Markdown files in your vault.
+- Filter notes by title or path.
+- Navigate results with arrow keys and select with **Enter**.
+- Remove mentioned notes before sending if you change your mind.
+- Mentioned notes are shown above the user message so the conversation makes the context visible.
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+When a message is sent, the plugin reads the latest content of each mentioned note and includes it as context for Ollama.
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+### Optional thinking support
 
-## Adding your plugin to the community plugin list
+For Ollama models that support thinking, enable **Settings → The Obsidian Assistant → Enable thinking**.
 
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
+When enabled:
 
-## How to use
+- Thinking is streamed separately from the final answer.
+- The thinking section is rendered as Markdown.
+- It collapses after completion and shows how long the model thought.
+- You can expand it again if you want to inspect the reasoning.
 
-- Clone this repo.
-- Make sure your NodeJS is at least v16 (`node --version`).
-- `npm i` or `yarn` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
+### Onboarding and settings
 
-## Manually installing the plugin
+The first run guides you through:
 
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
+1. Ollama host
+2. Chat model
+3. Embeddings model
 
-## Improve code quality with eslint
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code. 
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
+You can later update these values from the plugin settings page.
 
-## Funding URL
+## Requirements
 
-You can include funding URLs where people who use your plugin can financially support it.
+- Obsidian `0.15.0` or newer
+- [Ollama](https://ollama.com/) running locally or at a reachable host
+- A chat model installed in Ollama
 
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
+Recommended starting point:
 
-```json
-{
-    "fundingUrl": "https://buymeacoffee.com"
-}
+```bash
+ollama run gemma4
 ```
 
-If you have multiple URLs, you can also do:
+The default settings are:
 
-```json
-{
-    "fundingUrl": {
-        "Buy Me a Coffee": "https://buymeacoffee.com",
-        "GitHub Sponsor": "https://github.com/sponsors",
-        "Patreon": "https://www.patreon.com/"
-    }
-}
-```
+| Setting | Default |
+| --- | --- |
+| Ollama host | `http://localhost:11434` |
+| Chat model | `gemma4` |
+| Embeddings model | `nomic-embed-text` |
+| Thinking | Disabled |
 
-## API Documentation
+## Getting started
 
-See https://docs.obsidian.md
+1. Install and start Ollama.
+2. Download a chat model, for example `gemma4`.
+3. Enable **The Obsidian Assistant** in Obsidian.
+4. Open the Assistant from the ribbon icon.
+5. Complete the onboarding steps.
+6. Start chatting or mention notes with the **@** button.
+
+If Ollama is unreachable, the send button shows an unavailable state and the tooltip explains that Ollama cannot be reached.
+
+## Privacy
+
+The plugin does not add telemetry.
+
+When you send a message, the following data may be sent to your configured Ollama host:
+
+- Your chat message
+- The latest content of notes you explicitly mention
+- Prior conversation history in the current assistant session
+
+If your Ollama host is local, this stays on your machine. If you configure a remote Ollama host, data is sent to that host.
+
+## Limitations
+
+- Mentioning notes is explicit; the plugin does not automatically retrieve every relevant note yet.
+- Conversation history is currently session-based.
+- Response quality depends on the selected Ollama model and the context you provide.
+- Thinking only works with Ollama models that support the `think` option.
