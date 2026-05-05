@@ -47,10 +47,11 @@ export class AssistantView extends ItemView {
 	private sendButtonEl: HTMLButtonElement | null = null;
 	private mentionTagsEl: HTMLElement | null = null;
 	private mentionPopoverEl: HTMLElement | null = null;
+	private mentionResultFiles: TFile[] = [];
+	private selectedMentionResultIndex = 0;
 	private selectedNoteFiles: TFile[] = [];
 	private isStreaming = false;
 	private healthIntervalId: number | null = null;
-	private statusEl: HTMLElement | null = null;
 	private isHealthy = false;
 
 	constructor(leaf: WorkspaceLeaf, plugin: AssistantPlugin) {
@@ -105,31 +106,10 @@ export class AssistantView extends ItemView {
 		this.contentEl.empty();
 		this.contentEl.addClass("assistant-view");
 		const main = this.contentEl.createDiv({ cls: "assistant-main" });
-		this.renderAssistantToolbar(main);
 		this.chatHistoryEl = main.createDiv({ cls: "assistant-chat-history" });
 		this.renderMessages();
 		this.renderComposer(main);
 		this.startHealthPolling();
-	}
-
-	private renderAssistantToolbar(containerEl: HTMLElement): void {
-		const toolbar = containerEl.createDiv({ cls: "assistant-toolbar view-actions" });
-		this.statusEl = toolbar.createDiv({ cls: "view-action clickable-icon assistant-status-icon" });
-		this.statusEl.ariaLabel = "Unhealthy";
-		this.statusEl.title = "Unhealthy";
-		const newChatButton = toolbar.createEl("button", {
-			cls: "view-action clickable-icon",
-			attr: { title: "Start a new conversation", "aria-label": "Start a new conversation" },
-		});
-		setIcon(newChatButton, "plus");
-		newChatButton.addEventListener("click", () => this.startNewChat());
-		const conversationsButton = toolbar.createEl("button", {
-			cls: "view-action clickable-icon",
-			attr: { title: "Show conversations", "aria-label": "Show conversations" },
-		});
-		setIcon(conversationsButton, "text-align-justify");
-		conversationsButton.addEventListener("click", () => this.showConversations());
-		this.updateStatusIcon();
 	}
 
 	private renderMessages(): void {
@@ -208,7 +188,14 @@ export class AssistantView extends ItemView {
 			attr: { placeholder: "Ask anything..." },
 		});
 		const actionsRow = composer.createDiv({ cls: "assistant-composer-actions" });
-		const mentionButton = actionsRow.createEl("button", {
+		const leftActions = actionsRow.createDiv({ cls: "assistant-composer-left-actions" });
+		const newConversationButton = leftActions.createEl("button", {
+			cls: "assistant-composer-button",
+			attr: { title: "New conversation", "aria-label": "New conversation" },
+		});
+		setIcon(newConversationButton, "circle-plus");
+		newConversationButton.addEventListener("click", () => this.startNewChat());
+		const mentionButton = leftActions.createEl("button", {
 			cls: "assistant-composer-button",
 			attr: { title: "Mention Notes", "aria-label": "Mention Notes" },
 		});
@@ -223,6 +210,12 @@ export class AssistantView extends ItemView {
 
 		this.composerInputEl.addEventListener("input", () => this.updateSendButtonState());
 		this.composerInputEl.addEventListener("keydown", (event) => {
+			if (event.key === "Escape" && this.mentionPopoverEl) {
+				event.preventDefault();
+				this.closeMentionPopover();
+				return;
+			}
+
 			if (event.key !== "Enter" || event.shiftKey) {
 				return;
 			}
@@ -498,11 +491,12 @@ export class AssistantView extends ItemView {
 
 	private startNewChat(): void {
 		this.messages = [];
+		this.selectedNoteFiles = [];
+		this.renderMentionTags();
+		this.closeMentionPopover();
+		this.updateSendButtonState();
 		this.renderMessages();
 		this.composerInputEl?.focus();
-	}
-
-	private showConversations(): void {
 	}
 
 	private renderMentionTags(): void {
@@ -554,7 +548,42 @@ export class AssistantView extends ItemView {
 		const notesEl = popover.createDiv({ cls: "assistant-mention-results" });
 		const renderNotes = () => this.renderMentionNoteResults(notesEl, filterInput.value);
 
-		filterInput.addEventListener("input", renderNotes);
+		filterInput.addEventListener("input", () => {
+			this.selectedMentionResultIndex = 0;
+			renderNotes();
+		});
+		filterInput.addEventListener("keydown", (event) => {
+			if (event.key === "Escape") {
+				event.preventDefault();
+				this.closeMentionPopover();
+				this.composerInputEl?.focus();
+				return;
+			}
+
+			if (event.key === "ArrowDown") {
+				event.preventDefault();
+				this.moveMentionSelection(1, notesEl, filterInput.value);
+				return;
+			}
+
+			if (event.key === "ArrowUp") {
+				event.preventDefault();
+				this.moveMentionSelection(-1, notesEl, filterInput.value);
+				return;
+			}
+
+			if (event.key === "Enter") {
+				event.preventDefault();
+				const selectedFile = this.mentionResultFiles[this.selectedMentionResultIndex];
+				if (selectedFile) {
+					this.addMentionedNote(selectedFile);
+					return;
+				}
+
+				this.closeMentionPopover();
+				this.composerInputEl?.focus();
+			}
+		});
 		renderNotes();
 		filterInput.focus();
 	}
@@ -572,22 +601,39 @@ export class AssistantView extends ItemView {
 
 				return file.basename.toLowerCase().includes(normalizedQuery) || file.path.toLowerCase().includes(normalizedQuery);
 			})
-			.sort((first, second) => first.basename.localeCompare(second.basename));
+			.sort((first, second) => first.path.localeCompare(second.path));
+		this.mentionResultFiles = files;
+		this.selectedMentionResultIndex = Math.min(this.selectedMentionResultIndex, Math.max(files.length - 1, 0));
 
 		if (files.length === 0) {
 			containerEl.createDiv({ cls: "assistant-mention-empty", text: "No notes found" });
 			return;
 		}
 
-		files.forEach((file) => {
+		files.forEach((file, index) => {
 			const noteButton = containerEl.createEl("button", {
 				cls: "assistant-mention-result",
-				attr: { title: file.path, "aria-label": `Mention ${file.basename}` },
+				attr: { title: file.path, "aria-label": `Mention ${file.path}` },
 			});
-			noteButton.createSpan({ cls: "assistant-mention-result-title", text: file.basename });
+			noteButton.toggleClass("is-selected", index === this.selectedMentionResultIndex);
 			noteButton.createSpan({ cls: "assistant-mention-result-path", text: file.path });
+			noteButton.addEventListener("mouseenter", () => {
+				this.selectedMentionResultIndex = index;
+				this.renderMentionNoteResults(containerEl, query);
+			});
 			noteButton.addEventListener("click", () => this.addMentionedNote(file));
 		});
+	}
+
+	private moveMentionSelection(direction: number, containerEl: HTMLElement, query: string): void {
+		if (this.mentionResultFiles.length === 0) {
+			return;
+		}
+
+		this.selectedMentionResultIndex = (this.selectedMentionResultIndex + direction + this.mentionResultFiles.length) % this.mentionResultFiles.length;
+		this.renderMentionNoteResults(containerEl, query);
+		const selectedEl = containerEl.querySelector<HTMLElement>(".assistant-mention-result.is-selected");
+		selectedEl?.scrollIntoView({ block: "nearest" });
 	}
 
 	private addMentionedNote(file: TFile): void {
@@ -614,6 +660,8 @@ export class AssistantView extends ItemView {
 	private closeMentionPopover(): void {
 		this.mentionPopoverEl?.remove();
 		this.mentionPopoverEl = null;
+		this.mentionResultFiles = [];
+		this.selectedMentionResultIndex = 0;
 	}
 
 	private getUnavailableMentionPaths(): Set<string> {
@@ -629,8 +677,13 @@ export class AssistantView extends ItemView {
 			return;
 		}
 
+		this.sendButtonEl.empty();
+		this.sendButtonEl.toggleClass("is-healthy", this.isHealthy);
+		this.sendButtonEl.toggleClass("is-unhealthy", !this.isHealthy);
+		setIcon(this.sendButtonEl, this.isHealthy ? "send-horizontal" : "unlink");
+
 		const hasMessage = this.composerInputEl.value.trim().length > 0 || this.selectedNoteFiles.length > 0;
-		this.sendButtonEl.disabled = !hasMessage || this.isStreaming || !this.isHealthy;
+		this.sendButtonEl.disabled = this.isHealthy && (!hasMessage || this.isStreaming);
 		const tooltip = this.isHealthy ? (hasMessage ? "Send message" : "Type a message...") : "Ollama is unreachable";
 		this.sendButtonEl.title = tooltip;
 		this.sendButtonEl.ariaLabel = tooltip;
@@ -800,56 +853,7 @@ export class AssistantView extends ItemView {
 			this.isHealthy = false;
 		}
 
-		this.updateStatusIcon();
-	}
-
-	private updateStatusIcon(): void {
-		if (!this.statusEl) {
-			return;
-		}
-
-		this.statusEl.empty();
-		this.statusEl.toggleClass("is-healthy", this.isHealthy);
-		this.statusEl.toggleClass("is-unhealthy", !this.isHealthy);
-		this.statusEl.ariaLabel = this.isHealthy ? "Healthy" : "Unhealthy";
-		this.statusEl.title = this.isHealthy ? "Healthy" : "Unhealthy";
-
-		if (this.isHealthy) {
-			setIcon(this.statusEl, "globe");
-		} else {
-			this.statusEl.appendChild(this.createGlobeXIcon());
-		}
-
 		this.updateSendButtonState();
-	}
-
-	private createGlobeXIcon(): SVGElement {
-		const namespace = "http://www.w3.org/2000/svg";
-		const svg = document.createElementNS(namespace, "svg");
-		svg.setAttribute("xmlns", namespace);
-		svg.setAttribute("width", "24");
-		svg.setAttribute("height", "24");
-		svg.setAttribute("viewBox", "0 0 24 24");
-		svg.setAttribute("fill", "none");
-		svg.setAttribute("stroke", "currentColor");
-		svg.setAttribute("stroke-width", "2");
-		svg.setAttribute("stroke-linecap", "round");
-		svg.setAttribute("stroke-linejoin", "round");
-		svg.classList.add("svg-icon", "lucide-globe-x");
-
-		const firstPath = document.createElementNS(namespace, "path");
-		firstPath.setAttribute("d", "m16 3 5 5");
-		svg.appendChild(firstPath);
-
-		const secondPath = document.createElementNS(namespace, "path");
-		secondPath.setAttribute("d", "M2 12h20A10 10 0 1 1 12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 4-10");
-		svg.appendChild(secondPath);
-
-		const thirdPath = document.createElementNS(namespace, "path");
-		thirdPath.setAttribute("d", "m21 3-5 5");
-		svg.appendChild(thirdPath);
-
-		return svg;
 	}
 
 	private setLoading(button: HTMLButtonElement, isLoading: boolean, loadingText = "Saving..."): void {
