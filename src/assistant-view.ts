@@ -7,7 +7,7 @@ import { AssistantPluginSettings, ONBOARDING_DEFAULTS } from "./settings";
 export const ASSISTANT_VIEW_TYPE = "assistant-view";
 
 type OnboardingScreen = "welcome" | "ollamaHost" | "ollamaChatModel" | "ollamaEmbeddingModel";
-type OnboardingSettingKey = keyof AssistantPluginSettings;
+type OnboardingSettingKey = "ollamaHost" | "ollamaChatModel" | "ollamaEmbeddingModel";
 
 interface SettingStep {
 	key: OnboardingSettingKey;
@@ -26,6 +26,9 @@ interface ChatMessage {
 	role: ChatRole;
 	content: string;
 	mentions?: MentionedNote[];
+	thinking?: string;
+	isThinkingCollapsed?: boolean;
+	thinkingDurationSeconds?: number;
 }
 
 const SETTING_STEPS: SettingStep[] = [
@@ -158,6 +161,14 @@ export class AssistantView extends ItemView {
 		if (message.role === "user" && message.mentions && message.mentions.length > 0) {
 			this.renderMentionTagList(messageStack, message.mentions, false);
 		}
+		if (message.role === "assistant" && message.thinking) {
+			this.renderThinkingBubble(messageStack, message);
+		}
+
+		if (message.role === "assistant" && !message.content) {
+			return;
+		}
+
 		const bubble = messageStack.createDiv({ cls: "assistant-message-bubble" });
 		const iconEl = bubble.createDiv({ cls: "assistant-message-icon" });
 		setIcon(iconEl, message.role === "user" ? "user" : "origami");
@@ -169,6 +180,22 @@ export class AssistantView extends ItemView {
 		}
 
 		contentEl.setText(message.content);
+	}
+
+	private renderThinkingBubble(containerEl: HTMLElement, message: ChatMessage): void {
+		const details = containerEl.createEl("details", { cls: "assistant-thinking-bubble" });
+		details.open = !message.isThinkingCollapsed;
+		const summary = details.createEl("summary", { cls: "assistant-thinking-summary" });
+		const iconEl = summary.createSpan({ cls: "assistant-thinking-icon" });
+		setIcon(iconEl, "lightbulb");
+		summary.createSpan({ text: this.getThinkingTitle(message) });
+		summary.addEventListener("click", () => {
+			window.setTimeout(() => {
+				message.isThinkingCollapsed = !details.open;
+			}, 0);
+		});
+		const contentEl = details.createDiv({ cls: "assistant-thinking-content markdown-rendered" });
+		void MarkdownRenderer.render(this.plugin.app, message.thinking ?? "", contentEl, "", this.plugin);
 	}
 
 	private renderComposer(containerEl: HTMLElement): void {
@@ -633,28 +660,44 @@ export class AssistantView extends ItemView {
 		this.renderMentionTags();
 		this.closeMentionPopover();
 		this.messages.push({ role: "user", content, mentions: mentionSnapshots });
-		const assistantMessage: ChatMessage = { role: "assistant", content: "Thinking..." };
+		const assistantMessage: ChatMessage = { role: "assistant", content: this.plugin.settings.ollamaThinking ? "" : "Thinking..." };
 		this.messages.push(assistantMessage);
 		this.isStreaming = true;
 		this.updateSendButtonState();
 		this.renderMessages();
 
 		try {
+			let thinkingStartedAt: number | null = null;
 			const chatMessages = await this.buildOllamaMessages(assistantMessage);
 			const stream = await this.createOllamaClient().chat({
 				model: this.plugin.settings.ollamaChatModel,
 				messages: chatMessages,
 				stream: true,
+				think: this.plugin.settings.ollamaThinking,
 			});
 
 			let hasStartedStreaming = false;
 			for await (const chunk of stream) {
-				if (!hasStartedStreaming) {
-					assistantMessage.content = "";
-					hasStartedStreaming = true;
+				if (chunk.message.thinking) {
+					thinkingStartedAt = thinkingStartedAt ?? Date.now();
+					assistantMessage.thinking = `${assistantMessage.thinking ?? ""}${chunk.message.thinking}`;
+					this.renderMessages();
 				}
 
-				assistantMessage.content += chunk.message.content;
+				if (chunk.message.content) {
+					if (!hasStartedStreaming) {
+						assistantMessage.content = "";
+						hasStartedStreaming = true;
+					}
+
+					assistantMessage.content += chunk.message.content;
+					this.renderMessages();
+				}
+			}
+
+			if (assistantMessage.thinking) {
+				assistantMessage.thinkingDurationSeconds = this.getThinkingDurationSeconds(thinkingStartedAt);
+				assistantMessage.isThinkingCollapsed = true;
 				this.renderMessages();
 			}
 		} catch (error) {
@@ -665,6 +708,23 @@ export class AssistantView extends ItemView {
 			this.isStreaming = false;
 			this.updateSendButtonState();
 		}
+	}
+
+	private getThinkingTitle(message: ChatMessage): string {
+		if (message.thinkingDurationSeconds === undefined) {
+			return "Thinking...";
+		}
+
+		const unit = message.thinkingDurationSeconds === 1 ? "second" : "seconds";
+		return `Thought for ${message.thinkingDurationSeconds} ${unit}`;
+	}
+
+	private getThinkingDurationSeconds(startedAt: number | null): number {
+		if (startedAt === null) {
+			return 0;
+		}
+
+		return Math.max(1, Math.round((Date.now() - startedAt) / 1000));
 	}
 
 	private async buildOllamaMessages(excludedMessage: ChatMessage): Promise<Array<{ role: "user" | "assistant"; content: string }>> {

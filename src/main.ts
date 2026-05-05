@@ -1,6 +1,7 @@
 import { Plugin, WorkspaceLeaf } from "obsidian";
 import { AssistantView, ASSISTANT_VIEW_TYPE } from "./assistant-view";
 import { AssistantPluginSettings, DEFAULT_SETTINGS } from "./settings";
+import { AssistantSettingTab } from "./settings-tab";
 
 export default class AssistantPlugin extends Plugin {
 	settings: AssistantPluginSettings;
@@ -12,6 +13,7 @@ export default class AssistantPlugin extends Plugin {
 			ASSISTANT_VIEW_TYPE,
 			(leaf: WorkspaceLeaf) => new AssistantView(leaf, this)
 		);
+		this.addSettingTab(new AssistantSettingTab(this));
 
 		this.addRibbonIcon("origami", "Assistant", () => {
 			void this.activateView();

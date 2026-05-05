@@ -76,7 +76,8 @@
 
 .assistant-message-row.is-assistant .assistant-message-bubble {
 	width: 100%;
-	background: var(--background-secondary);
+	padding: 0;
+	background: transparent;
 	color: var(--text-normal);
 }
 
@@ -107,6 +108,46 @@
 }
 
 .assistant-message-content.markdown-rendered > :last-child {
+	margin-bottom: 0;
+}
+
+.assistant-thinking-bubble {
+	width: 100%;
+	padding: var(--size-4-2) 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	color: var(--text-muted);
+}
+
+.assistant-thinking-summary {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	cursor: pointer;
+	font-weight: var(--font-medium);
+}
+
+.assistant-thinking-icon {
+	display: flex;
+	flex: 0 0 auto;
+}
+
+.assistant-thinking-icon svg {
+	width: 16px;
+	height: 16px;
+}
+
+.assistant-thinking-content {
+	margin-top: var(--size-4-2);
+	word-break: break-word;
+}
+
+.assistant-thinking-content > :first-child {
+	margin-top: 0;
+}
+
+.assistant-thinking-content > :last-child {
 	margin-bottom: 0;
 }
 
