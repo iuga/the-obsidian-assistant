@@ -1,9 +1,16 @@
+
+<div align="center">
+  <img src="./docs/logo.png" alt="The Obsidian Assistant Logo" />
+</div>
+
 # The Obsidian Assistant
 
 The Obsidian Assistant turns your vault into a local chat workspace. 
 It connects Obsidian to [Ollama](https://ollama.com/) so you can ask questions, mention specific notes, and keep the model grounded in the files you choose.
 
 The plugin is designed around privacy-first usage: your selected note content is sent to the Ollama host you configure, which can run entirely on your machine.
+
+![](./docs/screenshot.png)
 
 ## Features
 
