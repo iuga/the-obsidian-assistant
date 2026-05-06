@@ -34,7 +34,7 @@
 	display: flex;
 	max-width: 85%;
 	flex-direction: column;
-	gap: var(--size-2-2);
+	gap: var(--size-4-2);
 }
 
 .assistant-message-row.is-user .assistant-message-stack {
@@ -51,6 +51,15 @@
 	margin-bottom: 0;
 }
 
+.assistant-message-stack .assistant-mention-tag {
+	border: 0 !important;
+	background: transparent !important;
+}
+
+.assistant-message-stack .assistant-mention-tag:hover {
+	background: var(--background-modifier-hover) !important;
+}
+
 .assistant-message-bubble {
 	display: flex;
 	gap: var(--size-4-2);
@@ -62,6 +71,8 @@
 	flex-direction: row-reverse;
 	background: var(--interactive-accent);
 	color: var(--text-on-accent);
+	-webkit-user-select: text;
+	user-select: text;
 }
 
 .assistant-message-row.is-assistant .assistant-message-bubble {
@@ -105,7 +116,8 @@
 
 .assistant-thinking-bubble {
 	width: 100%;
-	padding: var(--size-4-2) 0;
+	margin: 0;
+	padding: 0;
 	border: 0;
 	border-radius: 0;
 	background: transparent;
@@ -131,8 +143,11 @@
 }
 
 .assistant-thinking-content {
+	max-height: calc(5 * var(--line-height-normal) * 1em);
+	overflow-y: auto;
 	margin-top: var(--size-4-2);
 	word-break: break-word;
+	scroll-behavior: auto;
 	-webkit-user-select: text;
 	user-select: text;
 }
@@ -143,6 +158,56 @@
 
 .assistant-thinking-content > :last-child {
 	margin-bottom: 0;
+}
+
+.assistant-tools-bubble {
+	width: 100%;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	color: var(--text-muted);
+}
+
+.assistant-tools-summary {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	cursor: pointer;
+	font-weight: var(--font-medium);
+}
+
+.assistant-tools-icon {
+	display: flex;
+	flex: 0 0 auto;
+}
+
+.assistant-tools-icon svg {
+	width: 16px;
+	height: 16px;
+}
+
+.assistant-tools-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+	margin: var(--size-4-2) 0 0;
+	padding-left: var(--size-4-6);
+}
+
+.assistant-tools-item {
+	word-break: break-word;
+}
+
+.assistant-tools-name {
+	margin-right: var(--size-2-2);
+	color: var(--text-normal);
+	font-weight: var(--font-medium);
+}
+
+.assistant-tools-intent {
+	color: var(--text-muted);
 }
 
 .assistant-chat-warning {
@@ -207,6 +272,10 @@
 	box-shadow: none !important;
 	background: transparent !important;
 	color: var(--text-normal);
+}
+
+.assistant-mention-tag:hover {
+	background: var(--background-modifier-hover) !important;
 }
 
 .assistant-mention-tag-icon,

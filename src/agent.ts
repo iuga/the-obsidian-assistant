@@ -1,4 +1,5 @@
 import { AIMessageChunk, BaseMessageLike } from "@langchain/core/messages";
+import { ToolCallChunk } from "@langchain/core/messages/tool";
 import { ChatOllama } from "@langchain/ollama";
 import { App } from "obsidian";
 import { createAgent } from "langchain";
@@ -20,14 +21,22 @@ export interface LocalAgentOptions {
 	messages: AgentChatMessage[];
 }
 
+export interface AgentToolCallIntent {
+	id: string;
+	name: string;
+	intent: string;
+}
+
 export interface LocalAgentResponse {
 	content: string;
 	thinking: string;
+	toolIntents: AgentToolCallIntent[];
 }
 
 export interface LocalAgentStreamHandlers {
 	onContentDelta?: (delta: string) => void;
 	onThinkingDelta?: (delta: string) => void;
+	onToolIntent?: (toolIntent: AgentToolCallIntent) => void;
 }
 
 const MODEL_NODE_NAME = "model_request";
@@ -50,6 +59,9 @@ export async function streamLocalAgent(options: LocalAgentOptions, handlers: Loc
 
 	let content = "";
 	let thinking = "";
+	const toolIntents: AgentToolCallIntent[] = [];
+	const toolCallChunks = new Map<number, ToolCallChunk>();
+	const emittedToolCallIds = new Set<string>();
 
 	for await (const [message, metadata] of stream) {
 		if (!AIMessageChunk.isInstance(message)) {
@@ -58,6 +70,11 @@ export async function streamLocalAgent(options: LocalAgentOptions, handlers: Loc
 
 		if ((metadata as { langgraph_node?: string }).langgraph_node !== MODEL_NODE_NAME) {
 			continue;
+		}
+
+		for (const toolIntent of getToolIntents(message, toolCallChunks, emittedToolCallIds)) {
+			toolIntents.push(toolIntent);
+			handlers.onToolIntent?.(toolIntent);
 		}
 
 		const reasoningDelta = getReasoningDelta(message);
@@ -73,7 +90,69 @@ export async function streamLocalAgent(options: LocalAgentOptions, handlers: Loc
 		}
 	}
 
-	return { content, thinking };
+	return { content, thinking, toolIntents };
+}
+
+function getToolIntents(message: AIMessageChunk, toolCallChunks: Map<number, ToolCallChunk>, emittedToolCallIds: Set<string>): AgentToolCallIntent[] {
+	const toolCalls = message.tool_calls ?? [];
+	const directToolIntents = toolCalls
+		.map((toolCall) => toToolIntent(toolCall.id ?? `${toolCall.name}-${toolIntentsFallbackId(toolCall.args)}`, toolCall.name, toolCall.args))
+		.filter((toolIntent): toolIntent is AgentToolCallIntent => toolIntent !== null && !emittedToolCallIds.has(toolIntent.id));
+	directToolIntents.forEach((toolIntent) => emittedToolCallIds.add(toolIntent.id));
+
+	const chunkToolIntents: AgentToolCallIntent[] = [];
+	(message.tool_call_chunks ?? []).forEach((chunk) => {
+		const index = chunk.index ?? 0;
+		const existingChunk = toolCallChunks.get(index);
+		const mergedChunk: ToolCallChunk = {
+			id: `${existingChunk?.id ?? ""}${chunk.id ?? ""}` || undefined,
+			name: `${existingChunk?.name ?? ""}${chunk.name ?? ""}` || undefined,
+			args: `${existingChunk?.args ?? ""}${chunk.args ?? ""}` || undefined,
+			index,
+		};
+		toolCallChunks.set(index, mergedChunk);
+
+		const parsedArgs = parseToolArgs(mergedChunk.args);
+		if (!parsedArgs || !mergedChunk.name) {
+			return;
+		}
+
+		const toolIntent = toToolIntent(mergedChunk.id ?? `${mergedChunk.name}-${index}`, mergedChunk.name, parsedArgs);
+		if (!toolIntent || emittedToolCallIds.has(toolIntent.id)) {
+			return;
+		}
+
+		emittedToolCallIds.add(toolIntent.id);
+		chunkToolIntents.push(toolIntent);
+	});
+
+	return [...directToolIntents, ...chunkToolIntents];
+}
+
+function toToolIntent(id: string, name: string, args: Record<string, unknown>): AgentToolCallIntent | null {
+	const intent = args.intent;
+	return typeof intent === "string" && intent.trim() ? { id, name, intent: intent.trim() } : null;
+}
+
+function parseToolArgs(args: string | undefined): Record<string, unknown> | null {
+	if (!args) {
+		return null;
+	}
+
+	try {
+		const parsedArgs: unknown = JSON.parse(args);
+		return isRecord(parsedArgs) ? parsedArgs : null;
+	} catch {
+		return null;
+	}
+}
+
+function toolIntentsFallbackId(args: Record<string, unknown>): string {
+	return JSON.stringify(args);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function getReasoningDelta(message: AIMessageChunk): string {

@@ -1,5 +1,5 @@
 import { ItemView, MarkdownRenderer, setIcon, TFile, WorkspaceLeaf } from "obsidian";
-import { AgentChatMessage, streamLocalAgent } from "./agent";
+import { AgentChatMessage, AgentToolCallIntent, streamLocalAgent } from "./agent";
 import AssistantPlugin from "./main";
 import { OllamaHttpClient, OllamaModel } from "./ollama-client";
 import { ONBOARDING_DEFAULTS } from "./settings";
@@ -29,6 +29,8 @@ interface ChatMessage {
 	thinking?: string;
 	isThinkingCollapsed?: boolean;
 	thinkingDurationSeconds?: number;
+	toolIntents?: AgentToolCallIntent[];
+	areToolsCollapsed?: boolean;
 }
 
 const SETTING_STEPS: SettingStep[] = [
@@ -145,6 +147,9 @@ export class AssistantView extends ItemView {
 		if (message.role === "assistant" && message.thinking) {
 			this.renderThinkingBubble(messageStack, message);
 		}
+		if (message.role === "assistant" && message.toolIntents && message.toolIntents.length > 0) {
+			this.renderToolsBubble(messageStack, message);
+		}
 
 		if (message.role === "assistant" && !message.content) {
 			return;
@@ -176,7 +181,31 @@ export class AssistantView extends ItemView {
 			}, 0);
 		});
 		const contentEl = details.createDiv({ cls: "assistant-thinking-content markdown-rendered" });
-		void MarkdownRenderer.render(this.plugin.app, message.thinking ?? "", contentEl, "", this);
+		void MarkdownRenderer.render(this.plugin.app, message.thinking ?? "", contentEl, "", this).then(() => {
+			if (details.open) {
+				contentEl.scrollTop = contentEl.scrollHeight;
+			}
+		});
+	}
+
+	private renderToolsBubble(containerEl: HTMLElement, message: ChatMessage): void {
+		const details = containerEl.createEl("details", { cls: "assistant-tools-bubble" });
+		details.open = !message.areToolsCollapsed;
+		const summary = details.createEl("summary", { cls: "assistant-tools-summary" });
+		const iconEl = summary.createSpan({ cls: "assistant-tools-icon" });
+		setIcon(iconEl, "wrench");
+		summary.createSpan({ text: this.getToolsTitle(message) });
+		summary.addEventListener("click", () => {
+			window.setTimeout(() => {
+				message.areToolsCollapsed = !details.open;
+			}, 0);
+		});
+		const listEl = details.createEl("ul", { cls: "assistant-tools-list" });
+		(message.toolIntents ?? []).forEach((toolIntent) => {
+			const itemEl = listEl.createEl("li", { cls: "assistant-tools-item" });
+			itemEl.createSpan({ cls: "assistant-tools-name", text: toolIntent.name });
+			itemEl.createSpan({ cls: "assistant-tools-intent", text: toolIntent.intent });
+		});
 	}
 
 	private renderComposer(containerEl: HTMLElement): void {
@@ -743,9 +772,19 @@ export class AssistantView extends ItemView {
 				systemPrompt: this.plugin.settings.chatSystemPrompt.trim(),
 				messages: await this.buildAgentMessages(assistantMessage),
 			}, {
+				onToolIntent: (toolIntent) => {
+					if (!hasStartedStreamingContent && assistantMessage.content === "Thinking...") {
+						assistantMessage.content = "";
+					}
+					assistantMessage.toolIntents = [...(assistantMessage.toolIntents ?? []), toolIntent];
+					assistantMessage.areToolsCollapsed = false;
+					this.renderMessages();
+				},
 				onContentDelta: (delta) => {
 					if (!hasStartedStreamingContent) {
-						assistantMessage.content = "";
+						if (assistantMessage.content === "Thinking...") {
+							assistantMessage.content = "";
+						}
 						hasStartedStreamingContent = true;
 					}
 
@@ -755,6 +794,7 @@ export class AssistantView extends ItemView {
 				onThinkingDelta: (delta) => {
 					thinkingStartedAt = thinkingStartedAt ?? Date.now();
 					assistantMessage.thinking = `${assistantMessage.thinking ?? ""}${delta}`;
+					assistantMessage.isThinkingCollapsed = false;
 					this.renderMessages();
 				},
 			});
@@ -762,6 +802,9 @@ export class AssistantView extends ItemView {
 			if (assistantMessage.thinking && thinkingStartedAt !== null) {
 				assistantMessage.thinkingDurationSeconds = this.getThinkingDurationSeconds(thinkingStartedAt);
 				assistantMessage.isThinkingCollapsed = true;
+			}
+			if (assistantMessage.toolIntents && assistantMessage.toolIntents.length > 0) {
+				assistantMessage.areToolsCollapsed = true;
 			}
 			this.renderMessages();
 		} catch (error) {
@@ -781,6 +824,12 @@ export class AssistantView extends ItemView {
 
 		const unit = message.thinkingDurationSeconds === 1 ? "second" : "seconds";
 		return `Thought for ${message.thinkingDurationSeconds} ${unit}`;
+	}
+
+	private getToolsTitle(message: ChatMessage): string {
+		const toolCount = message.toolIntents?.length ?? 0;
+		const unit = toolCount === 1 ? "tool" : "tools";
+		return `${toolCount} ${unit} used`;
 	}
 
 	private getThinkingDurationSeconds(startedAt: number): number {
