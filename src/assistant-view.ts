@@ -736,6 +736,7 @@ export class AssistantView extends ItemView {
 			let thinkingStartedAt: number | null = null;
 			let hasStartedStreamingContent = false;
 			await streamLocalAgent({
+				app: this.plugin.app,
 				ollamaHost: this.getOllamaBaseUrl(),
 				ollamaChatModel: this.plugin.settings.ollamaChatModel,
 				ollamaThinking: this.plugin.settings.ollamaThinking,
