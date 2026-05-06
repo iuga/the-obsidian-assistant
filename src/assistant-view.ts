@@ -1,7 +1,7 @@
 import { ItemView, MarkdownRenderer, setIcon, TFile, WorkspaceLeaf } from "obsidian";
-import { Ollama } from "ollama/dist/browser.mjs";
-import type { ModelResponse } from "ollama/dist/browser.d.ts";
+import { AgentChatMessage, streamLocalAgent } from "./agent";
 import AssistantPlugin from "./main";
+import { OllamaHttpClient, OllamaModel } from "./ollama-client";
 import { ONBOARDING_DEFAULTS } from "./settings";
 
 export const ASSISTANT_VIEW_TYPE = "assistant-view";
@@ -40,7 +40,7 @@ const SETTING_STEPS: SettingStep[] = [
 export class AssistantView extends ItemView {
 	private plugin: AssistantPlugin;
 	private screen: OnboardingScreen = "welcome";
-	private models: ModelResponse[] = [];
+	private models: OllamaModel[] = [];
 	private messages: ChatMessage[] = [];
 	private chatHistoryEl: HTMLElement | null = null;
 	private composerInputEl: HTMLTextAreaElement | null = null;
@@ -437,8 +437,8 @@ export class AssistantView extends ItemView {
 		}
 	}
 
-	private createOllamaClient(): Ollama {
-		return new Ollama({ host: this.getOllamaBaseUrl() });
+	private createOllamaClient(): OllamaHttpClient {
+		return new OllamaHttpClient(this.getOllamaBaseUrl());
 	}
 
 	private getOllamaBaseUrl(): string {
@@ -734,38 +734,35 @@ export class AssistantView extends ItemView {
 
 		try {
 			let thinkingStartedAt: number | null = null;
-			const chatMessages = await this.buildOllamaMessages(assistantMessage);
-			const stream = await this.createOllamaClient().chat({
-				model: this.plugin.settings.ollamaChatModel,
-				messages: chatMessages,
-				stream: true,
-				think: this.plugin.settings.ollamaThinking,
-			});
-
-			let hasStartedStreaming = false;
-			for await (const chunk of stream) {
-				if (chunk.message.thinking) {
-					thinkingStartedAt = thinkingStartedAt ?? Date.now();
-					assistantMessage.thinking = `${assistantMessage.thinking ?? ""}${chunk.message.thinking}`;
-					this.renderMessages();
-				}
-
-				if (chunk.message.content) {
-					if (!hasStartedStreaming) {
+			let hasStartedStreamingContent = false;
+			await streamLocalAgent({
+				ollamaHost: this.getOllamaBaseUrl(),
+				ollamaChatModel: this.plugin.settings.ollamaChatModel,
+				ollamaThinking: this.plugin.settings.ollamaThinking,
+				systemPrompt: this.plugin.settings.chatSystemPrompt.trim(),
+				messages: await this.buildAgentMessages(assistantMessage),
+			}, {
+				onContentDelta: (delta) => {
+					if (!hasStartedStreamingContent) {
 						assistantMessage.content = "";
-						hasStartedStreaming = true;
+						hasStartedStreamingContent = true;
 					}
 
-					assistantMessage.content += chunk.message.content;
+					assistantMessage.content += delta;
 					this.renderMessages();
-				}
-			}
+				},
+				onThinkingDelta: (delta) => {
+					thinkingStartedAt = thinkingStartedAt ?? Date.now();
+					assistantMessage.thinking = `${assistantMessage.thinking ?? ""}${delta}`;
+					this.renderMessages();
+				},
+			});
 
-			if (assistantMessage.thinking) {
+			if (assistantMessage.thinking && thinkingStartedAt !== null) {
 				assistantMessage.thinkingDurationSeconds = this.getThinkingDurationSeconds(thinkingStartedAt);
 				assistantMessage.isThinkingCollapsed = true;
-				this.renderMessages();
 			}
+			this.renderMessages();
 		} catch (error) {
 			this.messages = this.messages.filter((message) => message !== assistantMessage);
 			this.messages.push({ role: "warning", content: error instanceof Error ? error.message : String(error) });
@@ -785,30 +782,21 @@ export class AssistantView extends ItemView {
 		return `Thought for ${message.thinkingDurationSeconds} ${unit}`;
 	}
 
-	private getThinkingDurationSeconds(startedAt: number | null): number {
-		if (startedAt === null) {
-			return 0;
-		}
-
+	private getThinkingDurationSeconds(startedAt: number): number {
 		return Math.max(1, Math.round((Date.now() - startedAt) / 1000));
 	}
 
-	private async buildOllamaMessages(excludedMessage: ChatMessage): Promise<Array<{ role: "system" | "user" | "assistant"; content: string }>> {
-		const messages = this.messages.filter((message) => message.role !== "warning" && message !== excludedMessage);
-		const chatMessages = await Promise.all(messages.map(async (message) => ({
-			role: message.role as "user" | "assistant",
-			content: await this.buildOllamaMessageContent(message),
+	private async buildAgentMessages(excludedMessage: ChatMessage): Promise<AgentChatMessage[]> {
+		const messages = this.messages.filter((message): message is ChatMessage & { role: AgentChatMessage["role"] } =>
+			(message.role === "user" || message.role === "assistant") && message !== excludedMessage,
+		);
+		return Promise.all(messages.map(async (message) => ({
+			role: message.role,
+			content: await this.buildAgentMessageContent(message),
 		})));
-		const systemPrompt = this.plugin.settings.chatSystemPrompt.trim();
-
-		if (!systemPrompt) {
-			return chatMessages;
-		}
-
-		return [{ role: "system", content: systemPrompt }, ...chatMessages];
 	}
 
-	private async buildOllamaMessageContent(message: ChatMessage): Promise<string> {
+	private async buildAgentMessageContent(message: ChatMessage): Promise<string> {
 		const mentions = message.mentions ?? [];
 		if (mentions.length === 0) {
 			return message.content;
