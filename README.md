@@ -41,10 +41,10 @@ The assistant can use these vault tools during a conversation:
 | `current_timestamp` | `current_timestamp()` | Returns the current timestamp in ISO 8601 format. |
 | `list` | `list(filter?: string)` | Lists Markdown note paths. If `filter` is provided, it is used as a regex against note filenames and paths. |
 | `search` | `search(queryString: string)` | Searches all Markdown notes with Obsidian's `prepareSimpleSearch` and returns matching note paths with 1-based line numbers. |
-| `view` | `view(linkToMarkdownfile: string, line?: number, surrounding?: number)` | Reads a note. If `line` is provided, returns that line with surrounding context; `surrounding` defaults to `5`. |
-| `create` | `create(filenameMd: string, contentInMarkdown: string)` | Creates a new Markdown note and returns success/failure status, filename, and content size in bytes. |
+| `view` | `view(linkToMarkdownfile: string, line?: number, surrounding?: number, offset?: number, limit?: number)` | Reads a note with line numbers. If `line` is provided, returns that line with surrounding context; otherwise supports `offset` and `limit`. |
+| `edit` | `edit(file_path: string, old_string: string, new_string: string, replace_all?: boolean)` | Creates notes, deletes content, or replaces exact text in existing notes. |
 
-`list`, `search`, and `create` return JSON strings so the local agent can consume them reliably.
+`list`, `search`, and `edit` return JSON strings so the local agent can consume them reliably.
 
 ### Optional thinking support
 
