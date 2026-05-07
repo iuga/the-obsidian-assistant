@@ -1,16 +1,14 @@
 
 <div align="center">
-  <img src="./docs/logo.png" alt="Porygon Logo" />
+  <img src="./docs/hero.png" alt="Porygon Logo" />
 </div>
 
-# Porygon
+# Porygon Assistant
 
 Porygon turns your vault into a local chat workspace.
 It connects Obsidian to [Ollama](https://ollama.com/) so you can ask questions, mention specific notes, and keep the model grounded in the files you choose.
 
 Porygon is designed around privacy-first usage: your selected note content is sent to the Ollama host you configure, which can run entirely on your machine.
-
-![](./docs/screenshot.png)
 
 ## Features
 
