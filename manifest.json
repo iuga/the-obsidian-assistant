@@ -3,7 +3,7 @@
 	"name": "Porygon",
 	"version": "0.2.2",
 	"minAppVersion": "0.15.0",
-	"description": "Turn your notes into a conversation",
+	"description": "Turn your notes into a conversation.",
 	"author": "Esteban Del Boca",
 	"isDesktopOnly": false
 }
