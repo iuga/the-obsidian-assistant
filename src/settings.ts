@@ -3,6 +3,7 @@ export interface AssistantPluginSettings {
 	ollamaChatModel: string;
 	ollamaEmbeddingModel: string;
 	ollamaThinking: boolean;
+	showToolUsage: boolean;
 	chatSystemPrompt: string;
 }
 
@@ -13,6 +14,7 @@ export const DEFAULT_SETTINGS: AssistantPluginSettings = {
 	ollamaChatModel: "",
 	ollamaEmbeddingModel: "",
 	ollamaThinking: false,
+	showToolUsage: false,
 	chatSystemPrompt: DEFAULT_CHAT_SYSTEM_PROMPT,
 };
 
@@ -21,5 +23,6 @@ export const ONBOARDING_DEFAULTS: AssistantPluginSettings = {
 	ollamaChatModel: "gemma4",
 	ollamaEmbeddingModel: "nomic-embed-text",
 	ollamaThinking: false,
+	showToolUsage: false,
 	chatSystemPrompt: DEFAULT_CHAT_SYSTEM_PROMPT,
 };

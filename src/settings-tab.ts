@@ -62,6 +62,16 @@ export class AssistantSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
+			.setName("Tool usage reporting")
+			.setDesc("Show tool calls and their intent in chat history.")
+			.addToggle((toggle) => toggle
+				.setValue(this.plugin.settings.showToolUsage)
+				.onChange(async (value) => {
+					this.plugin.settings.showToolUsage = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
 			.setName("System prompt")
 			.setDesc("Instructions sent before each chat.")
 			.addTextArea((textArea) => {

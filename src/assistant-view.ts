@@ -147,7 +147,7 @@ export class AssistantView extends ItemView {
 		if (message.role === "assistant" && message.thinking) {
 			this.renderThinkingBubble(messageStack, message);
 		}
-		if (message.role === "assistant" && message.toolIntents && message.toolIntents.length > 0) {
+		if (this.plugin.settings.showToolUsage && message.role === "assistant" && message.toolIntents && message.toolIntents.length > 0) {
 			this.renderToolsBubble(messageStack, message);
 		}
 
