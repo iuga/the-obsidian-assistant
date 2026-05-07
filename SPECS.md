@@ -17,3 +17,7 @@ Add vault-aware agent capabilities to Porygon, including tools to list notes by 
 ## Session 5: Split prompts and polish Porygon settings
 
 Split prompts into an internal bundled system prompt and a user-configurable personal prompt. Keep both defaults in root-level Markdown files under `prompts/`, send the internal prompt as the agent system prompt, send the personal prompt as a second system message, and expose only the personal prompt in settings. Improve the personal prompt editor with a stacked full-width layout so it is easier to read and edit.
+
+## Sesssion 6: Porygon product polish and stability
+
+Polish and stabilize the Obsidian plugin by renaming the product from “The Obsidian Assistant” to **Porygon** across metadata, UI strings, prompts, docs, package names, code identifiers, and CSS namespaces. Split prompts into two human-readable Markdown files: a bundled, non-configurable internal system prompt and a user-configurable personal prompt exposed in settings as a full-width, readable editor. Ensure Porygon sends both prompt layers as system messages, preserves compatibility with old settings, updates documentation/specs, and passes build and lint checks.
