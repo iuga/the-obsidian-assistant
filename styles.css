@@ -308,6 +308,26 @@
 	background: transparent;
 }
 
+.assistant-settings-prompt-setting {
+	display: block;
+}
+
+.assistant-settings-prompt-setting .setting-item-info {
+	width: 100%;
+	margin-bottom: var(--size-4-3);
+}
+
+.assistant-settings-prompt-setting .setting-item-control {
+	width: 100%;
+}
+
+.assistant-settings-prompt {
+	width: 100%;
+	min-height: 260px;
+	font-family: var(--font-monospace);
+	line-height: var(--line-height-normal);
+}
+
 .assistant-message-input:hover,
 .assistant-message-input:focus {
 	box-shadow: none;

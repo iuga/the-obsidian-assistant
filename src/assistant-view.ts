@@ -769,7 +769,7 @@ export class AssistantView extends ItemView {
 				ollamaHost: this.getOllamaBaseUrl(),
 				ollamaChatModel: this.plugin.settings.ollamaChatModel,
 				ollamaThinking: this.plugin.settings.ollamaThinking,
-				systemPrompt: this.plugin.settings.chatSystemPrompt.trim(),
+				personalPrompt: this.plugin.settings.personalPrompt.trim(),
 				messages: await this.buildAgentMessages(assistantMessage),
 			}, {
 				onToolIntent: (toolIntent) => {

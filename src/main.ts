@@ -1,6 +1,6 @@
 import { Plugin, WorkspaceLeaf } from "obsidian";
 import { AssistantView, ASSISTANT_VIEW_TYPE } from "./assistant-view";
-import { AssistantPluginSettings, DEFAULT_SETTINGS } from "./settings";
+import { AssistantPluginSettings, DEFAULT_SETTINGS, LegacyAssistantPluginSettings } from "./settings";
 import { AssistantSettingTab } from "./settings-tab";
 
 export default class AssistantPlugin extends Plugin {
@@ -37,7 +37,9 @@ export default class AssistantPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<AssistantPluginSettings>);
+		const savedSettings = await this.loadData() as LegacyAssistantPluginSettings | null;
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, savedSettings);
+		delete (this.settings as LegacyAssistantPluginSettings).chatSystemPrompt;
 	}
 
 	async saveSettings(): Promise<void> {

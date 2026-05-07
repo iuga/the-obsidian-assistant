@@ -71,18 +71,19 @@ export class AssistantSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 
-		new Setting(containerEl)
-			.setName("System prompt")
-			.setDesc("Instructions sent before each chat.")
+		const personalPromptSetting = new Setting(containerEl)
+			.setName("Personal prompt")
+			.setDesc("Tone and response preferences sent before each chat.")
 			.addTextArea((textArea) => {
 				textArea
-					.setValue(this.plugin.settings.chatSystemPrompt)
+					.setValue(this.plugin.settings.personalPrompt)
 					.onChange(async (value) => {
-						this.plugin.settings.chatSystemPrompt = value;
+						this.plugin.settings.personalPrompt = value;
 						await this.plugin.saveSettings();
 					});
-				textArea.inputEl.rows = 8;
+				textArea.inputEl.rows = 14;
 				textArea.inputEl.addClass("assistant-settings-prompt");
 			});
+		personalPromptSetting.settingEl.addClass("assistant-settings-prompt-setting");
 	}
 }

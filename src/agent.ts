@@ -3,6 +3,7 @@ import { ToolCallChunk } from "@langchain/core/messages/tool";
 import { ChatOllama } from "@langchain/ollama";
 import { App } from "obsidian";
 import { createAgent } from "langchain";
+import defaultSystemPrompt from "../prompts/system.md";
 import { createAgentTools } from "./tools";
 
 export type AgentChatRole = "user" | "assistant";
@@ -17,7 +18,7 @@ export interface LocalAgentOptions {
 	ollamaHost: string;
 	ollamaChatModel: string;
 	ollamaThinking: boolean;
-	systemPrompt: string;
+	personalPrompt: string;
 	messages: AgentChatMessage[];
 }
 
@@ -40,6 +41,7 @@ export interface LocalAgentStreamHandlers {
 }
 
 const MODEL_NODE_NAME = "model_request";
+const DEFAULT_SYSTEM_PROMPT = defaultSystemPrompt.trim();
 
 export async function streamLocalAgent(options: LocalAgentOptions, handlers: LocalAgentStreamHandlers = {}): Promise<LocalAgentResponse> {
 	const agent = createAgent({
@@ -49,11 +51,11 @@ export async function streamLocalAgent(options: LocalAgentOptions, handlers: Loc
 			think: options.ollamaThinking,
 		}),
 		tools: createAgentTools(options.app),
-		systemPrompt: options.systemPrompt,
+		systemPrompt: DEFAULT_SYSTEM_PROMPT,
 	});
 
 	const stream = await agent.stream(
-		{ messages: options.messages.map(toLangChainMessage) },
+		{ messages: [toSystemMessage(options.personalPrompt), ...options.messages.map(toLangChainMessage)] },
 		{ streamMode: "messages" },
 	);
 
@@ -158,6 +160,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function getReasoningDelta(message: AIMessageChunk): string {
 	const reasoning = message.additional_kwargs?.reasoning_content;
 	return typeof reasoning === "string" ? reasoning : "";
+}
+
+function toSystemMessage(content: string): BaseMessageLike {
+	return {
+		role: "system",
+		content,
+	};
 }
 
 function toLangChainMessage(message: AgentChatMessage): BaseMessageLike {
