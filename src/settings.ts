@@ -1,6 +1,6 @@
 import defaultPersonalPrompt from "../prompts/personal.md";
 
-export interface AssistantPluginSettings {
+export interface PorygonPluginSettings {
 	ollamaHost: string;
 	ollamaChatModel: string;
 	ollamaEmbeddingModel: string;
@@ -9,13 +9,13 @@ export interface AssistantPluginSettings {
 	personalPrompt: string;
 }
 
-export interface LegacyAssistantPluginSettings extends Partial<AssistantPluginSettings> {
+export interface LegacyPorygonPluginSettings extends Partial<PorygonPluginSettings> {
 	chatSystemPrompt?: string;
 }
 
 export const DEFAULT_PERSONAL_PROMPT = defaultPersonalPrompt.trim();
 
-export const DEFAULT_SETTINGS: AssistantPluginSettings = {
+export const DEFAULT_SETTINGS: PorygonPluginSettings = {
 	ollamaHost: "",
 	ollamaChatModel: "",
 	ollamaEmbeddingModel: "",
@@ -24,7 +24,7 @@ export const DEFAULT_SETTINGS: AssistantPluginSettings = {
 	personalPrompt: DEFAULT_PERSONAL_PROMPT,
 };
 
-export const ONBOARDING_DEFAULTS: AssistantPluginSettings = {
+export const ONBOARDING_DEFAULTS: PorygonPluginSettings = {
 	ollamaHost: "http://localhost:11434",
 	ollamaChatModel: "gemma4",
 	ollamaEmbeddingModel: "nomic-embed-text",

@@ -1,11 +1,11 @@
 import { PluginSettingTab, Setting } from "obsidian";
-import AssistantPlugin from "./main";
+import PorygonPlugin from "./main";
 import { ONBOARDING_DEFAULTS } from "./settings";
 
-export class AssistantSettingTab extends PluginSettingTab {
-	plugin: AssistantPlugin;
+export class PorygonSettingTab extends PluginSettingTab {
+	plugin: PorygonPlugin;
 
-	constructor(plugin: AssistantPlugin) {
+	constructor(plugin: PorygonPlugin) {
 		super(plugin.app, plugin);
 		this.plugin = plugin;
 	}
@@ -13,10 +13,6 @@ export class AssistantSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-
-		new Setting(containerEl)
-			.setName("Assistant")
-			.setHeading();
 
 		new Setting(containerEl)
 			.setName("Ollama host")
@@ -82,8 +78,8 @@ export class AssistantSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					});
 				textArea.inputEl.rows = 14;
-				textArea.inputEl.addClass("assistant-settings-prompt");
+				textArea.inputEl.addClass("porygon-settings-prompt");
 			});
-		personalPromptSetting.settingEl.addClass("assistant-settings-prompt-setting");
+		personalPromptSetting.settingEl.addClass("porygon-settings-prompt-setting");
 	}
 }

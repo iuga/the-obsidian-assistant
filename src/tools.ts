@@ -135,7 +135,7 @@ export function createEditTool(app: App) {
 		async ({ file_path: filePath, old_string: oldString, new_string: newString, replace_all: replaceAll = false }: { file_path: string; old_string: string; new_string: string; replace_all?: boolean }): Promise<string> => {
 			const filename = normalizeMarkdownPath(filePath);
 			const file = app.vault.getAbstractFileByPath(filename);
-			console.log("[tool] edit", {
+			console.debug("[tool] edit", {
 				filePath,
 				filename,
 				oldString,
@@ -154,7 +154,7 @@ export function createEditTool(app: App) {
 
 					await app.vault.create(filename, newString);
 					const result = stringifyEditMetadata("", newString);
-					console.log("[tool] edit result", result);
+					console.debug("[tool] edit result", result);
 					return result;
 				}
 
@@ -187,7 +187,7 @@ export function createEditTool(app: App) {
 
 				await app.vault.modify(file, newContent);
 				const result = stringifyEditMetadata(oldContent, newContent);
-				console.log("[tool] edit result", result);
+				console.debug("[tool] edit result", result);
 				return result;
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);

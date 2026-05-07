@@ -1,10 +1,10 @@
 import { ItemView, MarkdownRenderer, setIcon, TFile, WorkspaceLeaf } from "obsidian";
 import { AgentChatMessage, AgentToolCallIntent, streamLocalAgent } from "./agent";
-import AssistantPlugin from "./main";
+import PorygonPlugin from "./main";
 import { OllamaHttpClient, OllamaModel } from "./ollama-client";
 import { ONBOARDING_DEFAULTS } from "./settings";
 
-export const ASSISTANT_VIEW_TYPE = "assistant-view";
+export const PORYGON_VIEW_TYPE = "porygon-view";
 
 type OnboardingScreen = "welcome" | "ollamaHost" | "ollamaChatModel" | "ollamaEmbeddingModel";
 type OnboardingSettingKey = "ollamaHost" | "ollamaChatModel" | "ollamaEmbeddingModel";
@@ -15,7 +15,7 @@ interface SettingStep {
 	message: string;
 }
 
-type ChatRole = "user" | "assistant" | "warning";
+type ChatRole = "user" | "porygon" | "warning";
 
 interface MentionedNote {
 	path: string;
@@ -39,8 +39,8 @@ const SETTING_STEPS: SettingStep[] = [
 	{ key: "ollamaEmbeddingModel", label: "Ollama Embeddings Model", message: "Choose an embeddings model." },
 ];
 
-export class AssistantView extends ItemView {
-	private plugin: AssistantPlugin;
+export class PorygonView extends ItemView {
+	private plugin: PorygonPlugin;
 	private screen: OnboardingScreen = "welcome";
 	private models: OllamaModel[] = [];
 	private messages: ChatMessage[] = [];
@@ -57,17 +57,17 @@ export class AssistantView extends ItemView {
 	private healthIntervalId: number | null = null;
 	private isHealthy = false;
 
-	constructor(leaf: WorkspaceLeaf, plugin: AssistantPlugin) {
+	constructor(leaf: WorkspaceLeaf, plugin: PorygonPlugin) {
 		super(leaf);
 		this.plugin = plugin;
 	}
 
 	getViewType(): string {
-		return ASSISTANT_VIEW_TYPE;
+		return PORYGON_VIEW_TYPE;
 	}
 
 	getDisplayText(): string {
-		return "Assistant";
+		return "Porygon";
 	}
 
 	getIcon(): string {
@@ -76,7 +76,7 @@ export class AssistantView extends ItemView {
 
 	async onOpen(): Promise<void> {
 		this.contentEl.empty();
-		this.contentEl.addClass("assistant-view");
+		this.contentEl.addClass("porygon-view");
 		this.screen = this.getInitialScreen();
 		await this.loadModelsForModelStep();
 		this.render();
@@ -90,10 +90,10 @@ export class AssistantView extends ItemView {
 	private render(): void {
 		this.stopHealthPolling();
 		this.contentEl.empty();
-		this.contentEl.addClass("assistant-view");
+		this.contentEl.addClass("porygon-view");
 
 		if (this.isOnboardingComplete()) {
-			this.renderAssistant();
+			this.renderPorygon();
 			return;
 		}
 
@@ -105,11 +105,11 @@ export class AssistantView extends ItemView {
 		this.renderSettingScreen();
 	}
 
-	private renderAssistant(): void {
+	private renderPorygon(): void {
 		this.contentEl.empty();
-		this.contentEl.addClass("assistant-view");
-		const main = this.contentEl.createDiv({ cls: "assistant-main" });
-		this.chatHistoryEl = main.createDiv({ cls: "assistant-chat-history" });
+		this.contentEl.addClass("porygon-view");
+		const main = this.contentEl.createDiv({ cls: "porygon-main" });
+		this.chatHistoryEl = main.createDiv({ cls: "porygon-chat-history" });
 		this.renderMessages();
 		this.renderComposer(main);
 		this.startHealthPolling();
@@ -131,35 +131,35 @@ export class AssistantView extends ItemView {
 		}
 
 		if (message.role === "warning") {
-			const row = this.chatHistoryEl.createDiv({ cls: "assistant-message-row is-warning" });
-			const warningEl = row.createDiv({ cls: "assistant-chat-warning" });
-			const iconEl = warningEl.createDiv({ cls: "assistant-chat-warning-icon" });
+			const row = this.chatHistoryEl.createDiv({ cls: "porygon-message-row is-warning" });
+			const warningEl = row.createDiv({ cls: "porygon-chat-warning" });
+			const iconEl = warningEl.createDiv({ cls: "porygon-chat-warning-icon" });
 			setIcon(iconEl, "triangle-alert");
-			warningEl.createDiv({ cls: "assistant-chat-warning-content", text: message.content });
+			warningEl.createDiv({ cls: "porygon-chat-warning-content", text: message.content });
 			return;
 		}
 
-		const row = this.chatHistoryEl.createDiv({ cls: `assistant-message-row is-${message.role}` });
-		const messageStack = row.createDiv({ cls: "assistant-message-stack" });
+		const row = this.chatHistoryEl.createDiv({ cls: `porygon-message-row is-${message.role}` });
+		const messageStack = row.createDiv({ cls: "porygon-message-stack" });
 		if (message.role === "user" && message.mentions && message.mentions.length > 0) {
 			this.renderMentionTagList(messageStack, message.mentions, false);
 		}
-		if (message.role === "assistant" && message.thinking) {
+		if (message.role === "porygon" && message.thinking) {
 			this.renderThinkingBubble(messageStack, message);
 		}
-		if (this.plugin.settings.showToolUsage && message.role === "assistant" && message.toolIntents && message.toolIntents.length > 0) {
+		if (this.plugin.settings.showToolUsage && message.role === "porygon" && message.toolIntents && message.toolIntents.length > 0) {
 			this.renderToolsBubble(messageStack, message);
 		}
 
-		if (message.role === "assistant" && !message.content) {
+		if (message.role === "porygon" && !message.content) {
 			return;
 		}
 
-		const bubble = messageStack.createDiv({ cls: "assistant-message-bubble" });
-		const iconEl = bubble.createDiv({ cls: "assistant-message-icon" });
+		const bubble = messageStack.createDiv({ cls: "porygon-message-bubble" });
+		const iconEl = bubble.createDiv({ cls: "porygon-message-icon" });
 		setIcon(iconEl, message.role === "user" ? "user" : "origami");
-		const contentEl = bubble.createDiv({ cls: "assistant-message-content" });
-		if (message.role === "assistant") {
+		const contentEl = bubble.createDiv({ cls: "porygon-message-content" });
+		if (message.role === "porygon") {
 			contentEl.addClass("markdown-rendered");
 			void MarkdownRenderer.render(this.plugin.app, message.content, contentEl, "", this);
 			return;
@@ -169,10 +169,10 @@ export class AssistantView extends ItemView {
 	}
 
 	private renderThinkingBubble(containerEl: HTMLElement, message: ChatMessage): void {
-		const details = containerEl.createEl("details", { cls: "assistant-thinking-bubble" });
+		const details = containerEl.createEl("details", { cls: "porygon-thinking-bubble" });
 		details.open = !message.isThinkingCollapsed;
-		const summary = details.createEl("summary", { cls: "assistant-thinking-summary" });
-		const iconEl = summary.createSpan({ cls: "assistant-thinking-icon" });
+		const summary = details.createEl("summary", { cls: "porygon-thinking-summary" });
+		const iconEl = summary.createSpan({ cls: "porygon-thinking-icon" });
 		setIcon(iconEl, "lightbulb");
 		summary.createSpan({ text: this.getThinkingTitle(message) });
 		summary.addEventListener("click", () => {
@@ -180,7 +180,7 @@ export class AssistantView extends ItemView {
 				message.isThinkingCollapsed = !details.open;
 			}, 0);
 		});
-		const contentEl = details.createDiv({ cls: "assistant-thinking-content markdown-rendered" });
+		const contentEl = details.createDiv({ cls: "porygon-thinking-content markdown-rendered" });
 		void MarkdownRenderer.render(this.plugin.app, message.thinking ?? "", contentEl, "", this).then(() => {
 			if (details.open) {
 				contentEl.scrollTop = contentEl.scrollHeight;
@@ -189,10 +189,10 @@ export class AssistantView extends ItemView {
 	}
 
 	private renderToolsBubble(containerEl: HTMLElement, message: ChatMessage): void {
-		const details = containerEl.createEl("details", { cls: "assistant-tools-bubble" });
+		const details = containerEl.createEl("details", { cls: "porygon-tools-bubble" });
 		details.open = !message.areToolsCollapsed;
-		const summary = details.createEl("summary", { cls: "assistant-tools-summary" });
-		const iconEl = summary.createSpan({ cls: "assistant-tools-icon" });
+		const summary = details.createEl("summary", { cls: "porygon-tools-summary" });
+		const iconEl = summary.createSpan({ cls: "porygon-tools-icon" });
 		setIcon(iconEl, "wrench");
 		summary.createSpan({ text: this.getToolsTitle(message) });
 		summary.addEventListener("click", () => {
@@ -200,39 +200,39 @@ export class AssistantView extends ItemView {
 				message.areToolsCollapsed = !details.open;
 			}, 0);
 		});
-		const listEl = details.createEl("ul", { cls: "assistant-tools-list" });
+		const listEl = details.createEl("ul", { cls: "porygon-tools-list" });
 		(message.toolIntents ?? []).forEach((toolIntent) => {
-			const itemEl = listEl.createEl("li", { cls: "assistant-tools-item" });
-			itemEl.createSpan({ cls: "assistant-tools-name", text: toolIntent.name });
-			itemEl.createSpan({ cls: "assistant-tools-intent", text: toolIntent.intent });
+			const itemEl = listEl.createEl("li", { cls: "porygon-tools-item" });
+			itemEl.createSpan({ cls: "porygon-tools-name", text: toolIntent.name });
+			itemEl.createSpan({ cls: "porygon-tools-intent", text: toolIntent.intent });
 		});
 	}
 
 	private renderComposer(containerEl: HTMLElement): void {
-		const composer = containerEl.createDiv({ cls: "assistant-composer" });
-		this.mentionTagsEl = composer.createDiv({ cls: "assistant-mention-tags" });
+		const composer = containerEl.createDiv({ cls: "porygon-composer" });
+		this.mentionTagsEl = composer.createDiv({ cls: "porygon-mention-tags" });
 		this.renderMentionTags();
-		composer.createDiv({ cls: "assistant-attachments" });
+		composer.createDiv({ cls: "porygon-attachments" });
 		this.composerInputEl = composer.createEl("textarea", {
-			cls: "assistant-message-input",
+			cls: "porygon-message-input",
 			attr: { placeholder: "Ask anything..." },
 		});
-		const actionsRow = composer.createDiv({ cls: "assistant-composer-actions" });
-		const leftActions = actionsRow.createDiv({ cls: "assistant-composer-left-actions" });
+		const actionsRow = composer.createDiv({ cls: "porygon-composer-actions" });
+		const leftActions = actionsRow.createDiv({ cls: "porygon-composer-left-actions" });
 		const newConversationButton = leftActions.createEl("button", {
-			cls: "assistant-composer-button",
+			cls: "porygon-composer-button",
 			attr: { title: "New conversation", "aria-label": "New conversation" },
 		});
 		setIcon(newConversationButton, "circle-plus");
 		newConversationButton.addEventListener("click", () => this.startNewChat());
 		const mentionButton = leftActions.createEl("button", {
-			cls: "assistant-composer-button",
+			cls: "porygon-composer-button",
 			attr: { title: "Mention notes", "aria-label": "Mention notes" },
 		});
 		setIcon(mentionButton, "at-sign");
 		mentionButton.addEventListener("click", () => this.toggleMentionPopover(composer));
 		this.sendButtonEl = actionsRow.createEl("button", {
-			cls: "assistant-send-button",
+			cls: "porygon-send-button",
 			attr: { title: "Type a message...", "aria-label": "Type a message..." },
 		});
 		setIcon(this.sendButtonEl, "send-horizontal");
@@ -259,14 +259,14 @@ export class AssistantView extends ItemView {
 	}
 
 	private renderWelcome(): void {
-		const wrapper = this.contentEl.createDiv({ cls: "assistant-welcome" });
-		const iconEl = wrapper.createDiv({ cls: "assistant-welcome-icon" });
+		const wrapper = this.contentEl.createDiv({ cls: "porygon-welcome" });
+		const iconEl = wrapper.createDiv({ cls: "porygon-welcome-icon" });
 		setIcon(iconEl, "origami");
 		wrapper.createEl("h2", { text: "Welcome" });
 		wrapper.createEl("p", { text: "Turn your notes into a conversation..." });
 
 		const button = wrapper.createEl("button", {
-			cls: "mod-cta assistant-primary-button",
+			cls: "mod-cta porygon-primary-button",
 			text: "Let's start",
 		});
 
@@ -277,27 +277,27 @@ export class AssistantView extends ItemView {
 	}
 
 	private renderSettingScreen(): void {
-		const wrapper = this.contentEl.createDiv({ cls: "assistant-settings" });
-		const iconEl = wrapper.createDiv({ cls: "assistant-settings-icon" });
+		const wrapper = this.contentEl.createDiv({ cls: "porygon-settings" });
+		const iconEl = wrapper.createDiv({ cls: "porygon-settings-icon" });
 		setIcon(iconEl, "origami");
 		this.renderVerticalSteps(wrapper);
 	}
 
 	private renderVerticalSteps(containerEl: HTMLElement): void {
-		const stepsEl = containerEl.createDiv({ cls: "assistant-vertical-steps" });
+		const stepsEl = containerEl.createDiv({ cls: "porygon-vertical-steps" });
 		const currentStepIndex = this.getCurrentStepIndex();
 
 		SETTING_STEPS.forEach((step, index) => {
 			const isActive = index === currentStepIndex;
 			const isComplete = this.isStepComplete(step.key);
-			const row = stepsEl.createDiv({ cls: "assistant-vertical-step" });
+			const row = stepsEl.createDiv({ cls: "porygon-vertical-step" });
 			row.toggleClass("is-active", isActive);
 			row.toggleClass("is-complete", isComplete);
 			row.toggleClass("is-clickable", isComplete);
 
-			const rail = row.createDiv({ cls: "assistant-step-rail" });
-			rail.createDiv({ cls: "assistant-step-node", text: isComplete ? "✓" : String(index + 1) });
-			const card = row.createDiv({ cls: "assistant-step-card" });
+			const rail = row.createDiv({ cls: "porygon-step-rail" });
+			rail.createDiv({ cls: "porygon-step-node", text: isComplete ? "✓" : String(index + 1) });
+			const card = row.createDiv({ cls: "porygon-step-card" });
 			this.renderStepSummary(card, step, isComplete);
 
 			if (isComplete) {
@@ -314,16 +314,16 @@ export class AssistantView extends ItemView {
 	}
 
 	private renderStepSummary(containerEl: HTMLElement, step: SettingStep, isComplete: boolean): void {
-		const header = containerEl.createDiv({ cls: "assistant-step-card-header" });
+		const header = containerEl.createDiv({ cls: "porygon-step-card-header" });
 		header.createEl("strong", { text: step.label });
 
 		if (isComplete) {
 			const value = this.plugin.settings[step.key];
-			header.createEl("span", { cls: "assistant-step-value", text: value });
+			header.createEl("span", { cls: "porygon-step-value", text: value });
 			return;
 		}
 
-		header.createEl("span", { cls: "assistant-step-message", text: step.message });
+		header.createEl("span", { cls: "porygon-step-message", text: step.message });
 	}
 
 	private renderStepEditor(containerEl: HTMLElement, stepKey: OnboardingSettingKey): void {
@@ -338,14 +338,14 @@ export class AssistantView extends ItemView {
 	}
 
 	private renderHostEditor(containerEl: HTMLElement): void {
-		const editor = containerEl.createDiv({ cls: "assistant-step-editor" });
+		const editor = containerEl.createDiv({ cls: "porygon-step-editor" });
 		const input = editor.createEl("input", {
 			attr: {
 				type: "text",
 				value: this.plugin.settings.ollamaHost || ONBOARDING_DEFAULTS.ollamaHost,
 			},
 		});
-		const errorEl = editor.createDiv({ cls: "assistant-onboarding-error" });
+		const errorEl = editor.createDiv({ cls: "porygon-onboarding-error" });
 		const button = this.createNextButton(editor);
 
 		button.addEventListener("click", (event) => {
@@ -355,7 +355,7 @@ export class AssistantView extends ItemView {
 	}
 
 	private renderModelEditor(containerEl: HTMLElement, settingKey: "ollamaChatModel" | "ollamaEmbeddingModel"): void {
-		const editor = containerEl.createDiv({ cls: "assistant-step-editor" });
+		const editor = containerEl.createDiv({ cls: "porygon-step-editor" });
 		const defaultValue = settingKey === "ollamaChatModel" ? ONBOARDING_DEFAULTS.ollamaChatModel : ONBOARDING_DEFAULTS.ollamaEmbeddingModel;
 		const select = editor.createEl("select");
 		const modelNames = this.models.map((model) => model.name);
@@ -371,7 +371,7 @@ export class AssistantView extends ItemView {
 			});
 		}
 
-		const errorEl = editor.createDiv({ cls: "assistant-onboarding-error" });
+		const errorEl = editor.createDiv({ cls: "porygon-onboarding-error" });
 		if (modelNames.length === 0) {
 			this.renderNoModelsGuidance(errorEl);
 		}
@@ -385,7 +385,7 @@ export class AssistantView extends ItemView {
 
 	private createNextButton(containerEl: HTMLElement): HTMLButtonElement {
 		return containerEl.createEl("button", {
-			cls: "mod-cta assistant-primary-button",
+			cls: "mod-cta porygon-primary-button",
 			text: "Next",
 		});
 	}
@@ -440,7 +440,7 @@ export class AssistantView extends ItemView {
 				return;
 			}
 
-			this.renderAssistant();
+			this.renderPorygon();
 		} finally {
 			this.setLoading(button, false);
 		}
@@ -513,10 +513,10 @@ export class AssistantView extends ItemView {
 
 	private createHint(containerEl: HTMLElement): HTMLElement {
 		containerEl.empty();
-		const hintEl = containerEl.createDiv({ cls: "assistant-hint" });
-		const iconEl = hintEl.createDiv({ cls: "assistant-hint-icon" });
+		const hintEl = containerEl.createDiv({ cls: "porygon-hint" });
+		const iconEl = hintEl.createDiv({ cls: "porygon-hint-icon" });
 		setIcon(iconEl, "lightbulb");
-		return hintEl.createDiv({ cls: "assistant-hint-content" });
+		return hintEl.createDiv({ cls: "porygon-hint-content" });
 	}
 
 	private startNewChat(): void {
@@ -541,18 +541,18 @@ export class AssistantView extends ItemView {
 	private renderMentionTagList(containerEl: HTMLElement, mentions: MentionedNote[], isRemovable: boolean): void {
 		mentions.forEach((mention) => {
 			const tag = containerEl.createEl(isRemovable ? "button" : "div", {
-				cls: "assistant-mention-tag",
+				cls: "porygon-mention-tag",
 				attr: { title: mention.path, "aria-label": isRemovable ? `Remove ${mention.basename}` : mention.basename },
 			});
-			const noteIcon = tag.createSpan({ cls: "assistant-mention-tag-icon" });
+			const noteIcon = tag.createSpan({ cls: "porygon-mention-tag-icon" });
 			setIcon(noteIcon, "sticky-note");
-			tag.createSpan({ cls: "assistant-mention-tag-title", text: mention.basename });
+			tag.createSpan({ cls: "porygon-mention-tag-title", text: mention.basename });
 
 			if (!isRemovable) {
 				return;
 			}
 
-			const removeIcon = tag.createSpan({ cls: "assistant-mention-tag-remove" });
+			const removeIcon = tag.createSpan({ cls: "porygon-mention-tag-remove" });
 			setIcon(removeIcon, "x");
 			tag.addEventListener("click", () => this.removeMentionedNoteByPath(mention.path));
 		});
@@ -569,13 +569,13 @@ export class AssistantView extends ItemView {
 
 	private renderMentionPopover(composerEl: HTMLElement): void {
 		this.closeMentionPopover();
-		const popover = composerEl.createDiv({ cls: "assistant-mention-popover" });
+		const popover = composerEl.createDiv({ cls: "porygon-mention-popover" });
 		this.mentionPopoverEl = popover;
 		const filterInput = popover.createEl("input", {
-			cls: "assistant-mention-filter",
+			cls: "porygon-mention-filter",
 			attr: { type: "text", placeholder: "Filter notes..." },
 		});
-		const notesEl = popover.createDiv({ cls: "assistant-mention-results" });
+		const notesEl = popover.createDiv({ cls: "porygon-mention-results" });
 		const renderNotes = () => this.renderMentionNoteResults(notesEl, filterInput.value);
 
 		filterInput.addEventListener("input", () => {
@@ -643,17 +643,17 @@ export class AssistantView extends ItemView {
 		this.selectedMentionResultIndex = Math.min(this.selectedMentionResultIndex, Math.max(files.length - 1, 0));
 
 		if (files.length === 0) {
-			containerEl.createDiv({ cls: "assistant-mention-empty", text: "No notes found" });
+			containerEl.createDiv({ cls: "porygon-mention-empty", text: "No notes found" });
 			return;
 		}
 
 		files.forEach((file, index) => {
 			const noteButton = containerEl.createEl("button", {
-				cls: "assistant-mention-result",
+				cls: "porygon-mention-result",
 				attr: { title: file.path, "aria-label": `Mention ${file.path}`, type: "button" },
 			});
 			noteButton.toggleClass("is-selected", index === this.selectedMentionResultIndex);
-			noteButton.createSpan({ cls: "assistant-mention-result-path", text: file.path });
+			noteButton.createSpan({ cls: "porygon-mention-result-path", text: file.path });
 			noteButton.addEventListener("click", (event) => {
 				event.preventDefault();
 				event.stopPropagation();
@@ -669,7 +669,7 @@ export class AssistantView extends ItemView {
 
 		this.selectedMentionResultIndex = (this.selectedMentionResultIndex + direction + this.mentionResultFiles.length) % this.mentionResultFiles.length;
 		this.renderMentionNoteResults(containerEl, query);
-		const selectedEl = containerEl.querySelector<HTMLElement>(".assistant-mention-result.is-selected");
+		const selectedEl = containerEl.querySelector<HTMLElement>(".porygon-mention-result.is-selected");
 		selectedEl?.scrollIntoView({ block: "nearest" });
 	}
 
@@ -755,8 +755,8 @@ export class AssistantView extends ItemView {
 		this.renderMentionTags();
 		this.closeMentionPopover();
 		this.messages.push({ role: "user", content, mentions: mentionSnapshots });
-		const assistantMessage: ChatMessage = { role: "assistant", content: this.plugin.settings.ollamaThinking ? "" : "Thinking..." };
-		this.messages.push(assistantMessage);
+		const porygonMessage: ChatMessage = { role: "porygon", content: this.plugin.settings.ollamaThinking ? "" : "Thinking..." };
+		this.messages.push(porygonMessage);
 		this.isStreaming = true;
 		this.updateSendButtonState();
 		this.renderMessages();
@@ -770,45 +770,45 @@ export class AssistantView extends ItemView {
 				ollamaChatModel: this.plugin.settings.ollamaChatModel,
 				ollamaThinking: this.plugin.settings.ollamaThinking,
 				personalPrompt: this.plugin.settings.personalPrompt.trim(),
-				messages: await this.buildAgentMessages(assistantMessage),
+				messages: await this.buildAgentMessages(porygonMessage),
 			}, {
 				onToolIntent: (toolIntent) => {
-					if (!hasStartedStreamingContent && assistantMessage.content === "Thinking...") {
-						assistantMessage.content = "";
+					if (!hasStartedStreamingContent && porygonMessage.content === "Thinking...") {
+						porygonMessage.content = "";
 					}
-					assistantMessage.toolIntents = [...(assistantMessage.toolIntents ?? []), toolIntent];
-					assistantMessage.areToolsCollapsed = false;
+					porygonMessage.toolIntents = [...(porygonMessage.toolIntents ?? []), toolIntent];
+					porygonMessage.areToolsCollapsed = false;
 					this.renderMessages();
 				},
 				onContentDelta: (delta) => {
 					if (!hasStartedStreamingContent) {
-						if (assistantMessage.content === "Thinking...") {
-							assistantMessage.content = "";
+						if (porygonMessage.content === "Thinking...") {
+							porygonMessage.content = "";
 						}
 						hasStartedStreamingContent = true;
 					}
 
-					assistantMessage.content += delta;
+					porygonMessage.content += delta;
 					this.renderMessages();
 				},
 				onThinkingDelta: (delta) => {
 					thinkingStartedAt = thinkingStartedAt ?? Date.now();
-					assistantMessage.thinking = `${assistantMessage.thinking ?? ""}${delta}`;
-					assistantMessage.isThinkingCollapsed = false;
+					porygonMessage.thinking = `${porygonMessage.thinking ?? ""}${delta}`;
+					porygonMessage.isThinkingCollapsed = false;
 					this.renderMessages();
 				},
 			});
 
-			if (assistantMessage.thinking && thinkingStartedAt !== null) {
-				assistantMessage.thinkingDurationSeconds = this.getThinkingDurationSeconds(thinkingStartedAt);
-				assistantMessage.isThinkingCollapsed = true;
+			if (porygonMessage.thinking && thinkingStartedAt !== null) {
+				porygonMessage.thinkingDurationSeconds = this.getThinkingDurationSeconds(thinkingStartedAt);
+				porygonMessage.isThinkingCollapsed = true;
 			}
-			if (assistantMessage.toolIntents && assistantMessage.toolIntents.length > 0) {
-				assistantMessage.areToolsCollapsed = true;
+			if (porygonMessage.toolIntents && porygonMessage.toolIntents.length > 0) {
+				porygonMessage.areToolsCollapsed = true;
 			}
 			this.renderMessages();
 		} catch (error) {
-			this.messages = this.messages.filter((message) => message !== assistantMessage);
+			this.messages = this.messages.filter((message) => message !== porygonMessage);
 			this.messages.push({ role: "warning", content: error instanceof Error ? error.message : String(error) });
 			this.renderMessages();
 		} finally {
@@ -838,7 +838,7 @@ export class AssistantView extends ItemView {
 
 	private async buildAgentMessages(excludedMessage: ChatMessage): Promise<AgentChatMessage[]> {
 		const messages = this.messages.filter((message): message is ChatMessage & { role: AgentChatMessage["role"] } =>
-			(message.role === "user" || message.role === "assistant") && message !== excludedMessage,
+			(message.role === "user" || message.role === "porygon") && message !== excludedMessage,
 		);
 		return Promise.all(messages.map(async (message) => ({
 			role: message.role,

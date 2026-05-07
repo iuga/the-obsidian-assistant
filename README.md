@@ -1,14 +1,14 @@
 
 <div align="center">
-  <img src="./docs/logo.png" alt="The Obsidian Assistant Logo" />
+  <img src="./docs/logo.png" alt="Porygon Logo" />
 </div>
 
-# The Obsidian Assistant
+# Porygon
 
-The Obsidian Assistant turns your vault into a local chat workspace. 
+Porygon turns your vault into a local chat workspace.
 It connects Obsidian to [Ollama](https://ollama.com/) so you can ask questions, mention specific notes, and keep the model grounded in the files you choose.
 
-The plugin is designed around privacy-first usage: your selected note content is sent to the Ollama host you configure, which can run entirely on your machine.
+Porygon is designed around privacy-first usage: your selected note content is sent to the Ollama host you configure, which can run entirely on your machine.
 
 ![](./docs/screenshot.png)
 
@@ -16,10 +16,10 @@ The plugin is designed around privacy-first usage: your selected note content is
 
 ### Chat with a local Ollama model
 
-- Open the Assistant view from the ribbon icon.
+- Open the Porygon view from the ribbon icon.
 - Send chat messages to your configured Ollama model.
 - Stream responses as they are generated.
-- Render assistant responses as Markdown.
+- Render Porygon responses as Markdown.
 - Start a fresh conversation from the composer.
 
 ### Mention notes as context
@@ -30,11 +30,11 @@ The plugin is designed around privacy-first usage: your selected note content is
 - Remove mentioned notes before sending if you change your mind.
 - Mentioned notes are shown above the user message so the conversation makes the context visible.
 
-When a message is sent, the plugin reads the latest content of each mentioned note and includes it as context for Ollama.
+When a message is sent, Porygon reads the latest content of each mentioned note and includes it as context for Ollama.
 
 ### Agent tools
 
-The assistant can use these vault tools during a conversation:
+Porygon can use these vault tools during a conversation:
 
 | Tool | Signature | Description |
 | --- | --- | --- |
@@ -48,7 +48,7 @@ The assistant can use these vault tools during a conversation:
 
 ### Optional thinking support
 
-For Ollama models that support thinking, enable **Settings → The Obsidian Assistant → Enable thinking**.
+For Ollama models that support thinking, enable **Settings → Porygon Assistant → Model thinking**.
 
 When enabled:
 
@@ -65,7 +65,7 @@ The first run guides you through:
 2. Chat model
 3. Embeddings model
 
-You can later update these values from the plugin settings page.
+You can later update these values from the Porygon Assistant settings page.
 
 ## Requirements
 
@@ -92,8 +92,8 @@ The default settings are:
 
 1. Install and start Ollama.
 2. Download a chat model, for example `gemma4`.
-3. Enable **The Obsidian Assistant** in Obsidian.
-4. Open the Assistant from the ribbon icon.
+3. Enable **Porygon** in Obsidian.
+4. Open Porygon from the ribbon icon.
 5. Complete the onboarding steps.
 6. Start chatting or mention notes with the **@** button.
 
@@ -101,19 +101,19 @@ If Ollama is unreachable, the send button shows an unavailable state and the too
 
 ## Privacy
 
-The plugin does not add telemetry.
+Porygon does not add telemetry.
 
 When you send a message, the following data may be sent to your configured Ollama host:
 
 - Your chat message
 - The latest content of notes you explicitly mention
-- Prior conversation history in the current assistant session
+- Prior conversation history in the current Porygon session
 
 If your Ollama host is local, this stays on your machine. If you configure a remote Ollama host, data is sent to that host.
 
 ## Limitations
 
-- Mentioning notes is explicit; the plugin does not automatically retrieve every relevant note yet.
+- Mentioning notes is explicit; Porygon does not automatically retrieve every relevant note yet.
 - Conversation history is currently session-based.
 - Response quality depends on the selected Ollama model and the context you provide.
 - Thinking only works with Ollama models that support the `think` option.

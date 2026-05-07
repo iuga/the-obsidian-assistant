@@ -1,27 +1,27 @@
 import { Plugin, WorkspaceLeaf } from "obsidian";
-import { AssistantView, ASSISTANT_VIEW_TYPE } from "./assistant-view";
-import { AssistantPluginSettings, DEFAULT_SETTINGS, LegacyAssistantPluginSettings } from "./settings";
-import { AssistantSettingTab } from "./settings-tab";
+import { PorygonView, PORYGON_VIEW_TYPE } from "./porygon-view";
+import { PorygonPluginSettings, DEFAULT_SETTINGS, LegacyPorygonPluginSettings } from "./settings";
+import { PorygonSettingTab } from "./settings-tab";
 
-export default class AssistantPlugin extends Plugin {
-	settings: AssistantPluginSettings;
+export default class PorygonPlugin extends Plugin {
+	settings: PorygonPluginSettings;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
 
 		this.registerView(
-			ASSISTANT_VIEW_TYPE,
-			(leaf: WorkspaceLeaf) => new AssistantView(leaf, this)
+			PORYGON_VIEW_TYPE,
+			(leaf: WorkspaceLeaf) => new PorygonView(leaf, this)
 		);
-		this.addSettingTab(new AssistantSettingTab(this));
+		this.addSettingTab(new PorygonSettingTab(this));
 
-		this.addRibbonIcon("origami", "Assistant", () => {
+		this.addRibbonIcon("origami", "Porygon", () => {
 			void this.activateView();
 		});
 	}
 
 	async activateView(): Promise<void> {
-		const existingLeaves = this.app.workspace.getLeavesOfType(ASSISTANT_VIEW_TYPE);
+		const existingLeaves = this.app.workspace.getLeavesOfType(PORYGON_VIEW_TYPE);
 		let leaf: WorkspaceLeaf | null = existingLeaves[0] ?? null;
 
 		if (!leaf) {
@@ -32,14 +32,14 @@ export default class AssistantPlugin extends Plugin {
 			return;
 		}
 
-		await leaf.setViewState({ type: ASSISTANT_VIEW_TYPE, active: true });
+		await leaf.setViewState({ type: PORYGON_VIEW_TYPE, active: true });
 		void this.app.workspace.revealLeaf(leaf);
 	}
 
 	async loadSettings(): Promise<void> {
-		const savedSettings = await this.loadData() as LegacyAssistantPluginSettings | null;
+		const savedSettings = await this.loadData() as LegacyPorygonPluginSettings | null;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, savedSettings);
-		delete (this.settings as LegacyAssistantPluginSettings).chatSystemPrompt;
+		delete (this.settings as LegacyPorygonPluginSettings).chatSystemPrompt;
 	}
 
 	async saveSettings(): Promise<void> {
