@@ -1,4 +1,4 @@
-import { ItemView, MarkdownRenderer, setIcon, TFile, TFolder, WorkspaceLeaf } from "obsidian";
+import { ItemView, MarkdownRenderer, Modal, setIcon, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import { AgentChatMessage, AgentToolCallIntent, streamLocalAgent } from "./agent";
 import PorygonPlugin from "./main";
 import { OllamaHttpClient, OllamaModel } from "./ollama-client";
@@ -38,9 +38,20 @@ interface MentionSearchResult {
 	files: TFile[];
 }
 
+type SlashCommandId = "new" | "save";
+
+interface SlashCommand {
+	id: SlashCommandId;
+	label: string;
+	syntax: string;
+	description: string;
+	icon: string;
+}
+
 interface ChatMessage {
 	role: ChatRole;
 	content: string;
+	createdAt?: string;
 	mentions?: MentionedItem[];
 	thinking?: string;
 	isThinkingCollapsed?: boolean;
@@ -53,6 +64,11 @@ const SETTING_STEPS: SettingStep[] = [
 	{ key: "ollamaHost", label: "Ollama Host", message: "Where is Ollama running?" },
 	{ key: "ollamaChatModel", label: "Ollama Chat Model", message: "Choose a chat model." },
 	{ key: "ollamaEmbeddingModel", label: "Ollama Embeddings Model", message: "Choose an embeddings model." },
+];
+
+const SLASH_COMMANDS: SlashCommand[] = [
+	{ id: "new", label: "New conversation", syntax: "/new", description: "Start a new conversation.", icon: "circle-plus" },
+	{ id: "save", label: "Save conversation", syntax: "/save", description: "Save this conversation to a note.", icon: "save" },
 ];
 
 export class PorygonView extends ItemView {
@@ -69,6 +85,11 @@ export class PorygonView extends ItemView {
 	private mentionResults: MentionSearchResult[] = [];
 	private selectedMentionResultIndex = 0;
 	private selectedMentions: MentionedItem[] = [];
+	private slashCommandPopoverEl: HTMLElement | null = null;
+	private slashCommandKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
+	private slashCommandPointerDownHandler: ((event: PointerEvent) => void) | null = null;
+	private filteredSlashCommands: SlashCommand[] = [];
+	private selectedSlashCommandIndex = 0;
 	private isStreaming = false;
 	private healthIntervalId: number | null = null;
 	private isHealthy = false;
@@ -241,15 +262,15 @@ export class PorygonView extends ItemView {
 		});
 		const actionsRow = composer.createDiv({ cls: "porygon-composer-actions" });
 		const leftActions = actionsRow.createDiv({ cls: "porygon-composer-left-actions" });
-		const newConversationButton = leftActions.createEl("button", {
+		const slashCommandButton = leftActions.createEl("button", {
 			cls: "porygon-composer-button",
-			attr: { title: "New conversation", "aria-label": "New conversation" },
+			attr: { title: "Slash commands", "aria-label": "Slash commands" },
 		});
-		setIcon(newConversationButton, "circle-plus");
-		newConversationButton.addEventListener("click", () => this.startNewChat());
+		setIcon(slashCommandButton, "circle-slash");
+		slashCommandButton.addEventListener("click", () => this.toggleSlashCommandPopover(composer));
 		const mentionButton = leftActions.createEl("button", {
 			cls: "porygon-composer-button",
-			attr: { title: "Mention notes", "aria-label": "Mention notes" },
+			attr: { title: "Mention files or folders", "aria-label": "Mention files or folders" },
 		});
 		setIcon(mentionButton, "at-sign");
 		mentionButton.addEventListener("click", () => this.toggleMentionPopover(composer));
@@ -268,8 +289,21 @@ export class PorygonView extends ItemView {
 				return;
 			}
 
+			if (event.key === "Escape" && this.slashCommandPopoverEl) {
+				event.preventDefault();
+				this.closeSlashCommandPopover();
+				return;
+			}
+
 			if (event.key === "@" && !this.mentionPopoverEl) {
+				this.closeSlashCommandPopover();
 				window.setTimeout(() => this.renderMentionPopover(composer), 0);
+				return;
+			}
+
+			if (event.key === "/" && !this.slashCommandPopoverEl) {
+				this.closeMentionPopover();
+				window.setTimeout(() => this.renderSlashCommandPopover(composer), 0);
 				return;
 			}
 
@@ -546,11 +580,41 @@ export class PorygonView extends ItemView {
 		return hintEl.createDiv({ cls: "porygon-hint-content" });
 	}
 
+	private async handleNewConversationCommand(): Promise<void> {
+		if (!this.hasConversationContent()) {
+			this.startNewChat();
+			return;
+		}
+
+		const decision = await this.confirmSaveBeforeNewConversation();
+		if (decision === "cancel") {
+			this.composerInputEl?.focus();
+			return;
+		}
+
+		if (decision === "yes") {
+			await this.saveConversation();
+		}
+
+		this.startNewChat();
+	}
+
+	private hasConversationContent(): boolean {
+		return this.messages.some((message) => (message.role === "user" || message.role === "porygon") && message.content.trim().length > 0);
+	}
+
+	private confirmSaveBeforeNewConversation(): Promise<"yes" | "no" | "cancel"> {
+		return new Promise((resolve) => {
+			new SaveBeforeNewConversationModal(this.plugin, resolve).open();
+		});
+	}
+
 	private startNewChat(): void {
 		this.messages = [];
 		this.selectedMentions = [];
 		this.renderMentionTags();
 		this.closeMentionPopover();
+		this.closeSlashCommandPopover();
 		this.updateSendButtonState();
 		this.renderMessages();
 		this.composerInputEl?.focus();
@@ -591,7 +655,18 @@ export class PorygonView extends ItemView {
 			return;
 		}
 
+		this.closeSlashCommandPopover();
 		this.renderMentionPopover(composerEl);
+	}
+
+	private toggleSlashCommandPopover(composerEl: HTMLElement): void {
+		if (this.slashCommandPopoverEl) {
+			this.closeSlashCommandPopover();
+			return;
+		}
+
+		this.closeMentionPopover();
+		this.renderSlashCommandPopover(composerEl);
 	}
 
 	private renderMentionPopover(composerEl: HTMLElement): void {
@@ -832,6 +907,179 @@ export class PorygonView extends ItemView {
 		this.selectedMentionResultIndex = 0;
 	}
 
+	private renderSlashCommandPopover(composerEl: HTMLElement): void {
+		this.closeSlashCommandPopover();
+		const popover = composerEl.createDiv({ cls: "porygon-slash-popover" });
+		this.slashCommandPopoverEl = popover;
+		const panel = popover.createDiv({ cls: "porygon-slash-panel" });
+		const filterInput = panel.createEl("input", {
+			cls: "porygon-slash-filter",
+			attr: { type: "text", placeholder: "Filter commands..." },
+		});
+		const commandsEl = panel.createDiv({ cls: "porygon-slash-results" });
+		const descriptionEl = panel.createDiv({ cls: "porygon-slash-description" });
+		const renderCommands = () => this.renderSlashCommandResults(commandsEl, descriptionEl, filterInput.value);
+
+		filterInput.addEventListener("input", () => {
+			this.selectedSlashCommandIndex = 0;
+			renderCommands();
+		});
+		this.slashCommandKeydownHandler = (event: KeyboardEvent) => this.handleSlashCommandPopoverKeydown(event, commandsEl, descriptionEl, filterInput.value);
+		this.slashCommandPointerDownHandler = (event: PointerEvent) => this.handleSlashCommandPointerDown(event);
+		window.addEventListener("keydown", this.slashCommandKeydownHandler, true);
+		window.addEventListener("pointerdown", this.slashCommandPointerDownHandler, true);
+		renderCommands();
+		filterInput.focus();
+	}
+
+	private handleSlashCommandPopoverKeydown(event: KeyboardEvent, commandsEl: HTMLElement, descriptionEl: HTMLElement, query: string): void {
+		if (event.key === "Escape") {
+			event.preventDefault();
+			event.stopPropagation();
+			this.closeSlashCommandPopover();
+			this.composerInputEl?.focus();
+			return;
+		}
+
+		if (event.key === "ArrowDown") {
+			event.preventDefault();
+			event.stopPropagation();
+			this.moveSlashCommandSelection(1, commandsEl, descriptionEl, query);
+			return;
+		}
+
+		if (event.key === "ArrowUp") {
+			event.preventDefault();
+			event.stopPropagation();
+			this.moveSlashCommandSelection(-1, commandsEl, descriptionEl, query);
+			return;
+		}
+
+		if (event.key === "Enter") {
+			event.preventDefault();
+			event.stopPropagation();
+			const selectedCommand = this.filteredSlashCommands[this.selectedSlashCommandIndex];
+			if (selectedCommand) {
+				this.selectSlashCommand(selectedCommand);
+				return;
+			}
+
+			this.closeSlashCommandPopover();
+			this.composerInputEl?.focus();
+		}
+	}
+
+	private handleSlashCommandPointerDown(event: PointerEvent): void {
+		if (!this.slashCommandPopoverEl) {
+			return;
+		}
+
+		const target = event.target;
+		if (target instanceof Node && this.slashCommandPopoverEl.contains(target)) {
+			return;
+		}
+
+		this.closeSlashCommandPopover();
+	}
+
+	private renderSlashCommandResults(containerEl: HTMLElement, descriptionEl: HTMLElement, query: string): void {
+		containerEl.empty();
+		const commands = this.getSlashCommands(query);
+		this.filteredSlashCommands = commands;
+		this.selectedSlashCommandIndex = Math.min(this.selectedSlashCommandIndex, Math.max(commands.length - 1, 0));
+
+		if (commands.length === 0) {
+			descriptionEl.empty();
+			containerEl.createDiv({ cls: "porygon-slash-empty", text: "No commands found" });
+			return;
+		}
+
+		commands.forEach((command, index) => {
+			const commandButton = containerEl.createEl("button", {
+				cls: "porygon-slash-result",
+				attr: { title: command.description, "aria-label": command.label, type: "button" },
+			});
+			commandButton.toggleClass("is-selected", index === this.selectedSlashCommandIndex);
+			const iconEl = commandButton.createSpan({ cls: "porygon-slash-result-icon" });
+			setIcon(iconEl, command.icon);
+			const textEl = commandButton.createSpan({ cls: "porygon-slash-result-text" });
+			textEl.createSpan({ cls: "porygon-slash-result-syntax", text: command.syntax });
+			textEl.createSpan({ cls: "porygon-slash-result-label", text: command.label });
+			commandButton.addEventListener("click", (event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				this.selectSlashCommand(command);
+			});
+		});
+
+		this.renderSlashCommandDescription(descriptionEl);
+	}
+
+	private renderSlashCommandDescription(descriptionEl: HTMLElement): void {
+		descriptionEl.empty();
+		const selectedCommand = this.filteredSlashCommands[this.selectedSlashCommandIndex];
+		if (!selectedCommand) {
+			return;
+		}
+
+		descriptionEl.setText(selectedCommand.description);
+	}
+
+	private moveSlashCommandSelection(direction: number, containerEl: HTMLElement, descriptionEl: HTMLElement, query: string): void {
+		if (this.filteredSlashCommands.length === 0) {
+			return;
+		}
+
+		this.selectedSlashCommandIndex = (this.selectedSlashCommandIndex + direction + this.filteredSlashCommands.length) % this.filteredSlashCommands.length;
+		this.renderSlashCommandResults(containerEl, descriptionEl, query);
+		const selectedEl = containerEl.querySelector<HTMLElement>(".porygon-slash-result.is-selected");
+		selectedEl?.scrollIntoView({ block: "nearest" });
+	}
+
+	private getSlashCommands(query: string): SlashCommand[] {
+		const normalizedQuery = query.trim().toLowerCase();
+		if (!normalizedQuery) {
+			return SLASH_COMMANDS;
+		}
+
+		return SLASH_COMMANDS.filter((command) =>
+			command.label.toLowerCase().includes(normalizedQuery) ||
+			command.syntax.toLowerCase().includes(normalizedQuery) ||
+			command.description.toLowerCase().includes(normalizedQuery)
+		);
+	}
+
+	private selectSlashCommand(command: SlashCommand): void {
+		this.closeSlashCommandPopover();
+		this.composerInputEl?.focus();
+
+		if (command.id === "new") {
+			void this.handleNewConversationCommand();
+			return;
+		}
+
+		if (command.id === "save") {
+			void this.saveConversation();
+		}
+	}
+
+	private closeSlashCommandPopover(): void {
+		if (this.slashCommandKeydownHandler) {
+			window.removeEventListener("keydown", this.slashCommandKeydownHandler, true);
+			this.slashCommandKeydownHandler = null;
+		}
+
+		if (this.slashCommandPointerDownHandler) {
+			window.removeEventListener("pointerdown", this.slashCommandPointerDownHandler, true);
+			this.slashCommandPointerDownHandler = null;
+		}
+
+		this.slashCommandPopoverEl?.remove();
+		this.slashCommandPopoverEl = null;
+		this.filteredSlashCommands = [];
+		this.selectedSlashCommandIndex = 0;
+	}
+
 	private getUnavailableMentionPaths(): Set<string> {
 		const paths = new Set(this.selectedMentions.map((mention) => mention.path));
 		this.messages.forEach((message) => {
@@ -874,14 +1122,15 @@ export class PorygonView extends ItemView {
 			return;
 		}
 
+		const createdAt = new Date().toISOString();
 		this.composerInputEl.value = "";
 		this.selectedMentions = [];
 		this.renderMentionTags();
 		this.closeMentionPopover();
-		this.messages.push({ role: "user", content, mentions: mentionSnapshots });
+		this.messages.push({ role: "user", content, createdAt, mentions: mentionSnapshots });
 		const fileMessages = await this.createFileContextMessages(mentionSnapshots);
 		this.messages.push(...fileMessages);
-		const porygonMessage: ChatMessage = { role: "porygon", content: this.plugin.settings.ollamaThinking ? "" : "Thinking..." };
+		const porygonMessage: ChatMessage = { role: "porygon", content: this.plugin.settings.ollamaThinking ? "" : "Thinking...", createdAt: new Date().toISOString() };
 		this.messages.push(porygonMessage);
 		this.isStreaming = true;
 		this.updateSendButtonState();
@@ -989,6 +1238,50 @@ export class PorygonView extends ItemView {
 		}));
 	}
 
+	private async saveConversation(): Promise<void> {
+		const visibleMessages = this.messages.filter((message): message is ChatMessage & { role: "user" | "porygon" } => message.role === "user" || message.role === "porygon");
+		const firstMessage = visibleMessages[0];
+		if (!firstMessage) {
+			this.messages.push({ role: "warning", content: "No conversation to save." });
+			this.renderMessages();
+			return;
+		}
+
+		try {
+			const timestamp = this.getConversationTimestamp(firstMessage);
+			const filename = `porygon/conversation_${timestamp}.md`;
+			const content = this.formatConversationForSave(visibleMessages);
+			await this.ensureFolderExists("porygon");
+			const existingFile = this.plugin.app.vault.getFileByPath(filename);
+
+			if (existingFile) {
+				await this.plugin.app.vault.modify(existingFile, content);
+			} else {
+				await this.plugin.app.vault.create(filename, content);
+			}
+		} catch (error) {
+			this.messages.push({ role: "warning", content: error instanceof Error ? error.message : String(error) });
+			this.renderMessages();
+		}
+	}
+
+	private getConversationTimestamp(firstMessage: ChatMessage): string {
+		const timestampSource = firstMessage.createdAt ?? new Date().toISOString();
+		return timestampSource.replace(/[:.]/g, "-");
+	}
+
+	private formatConversationForSave(messages: Array<ChatMessage & { role: "user" | "porygon" }>): string {
+		return messages.map((message) => `${message.role === "user" ? "User" : "Porygon"}: \n${message.content}`).join("\n\n");
+	}
+
+	private async ensureFolderExists(path: string): Promise<void> {
+		if (this.plugin.app.vault.getFolderByPath(path)) {
+			return;
+		}
+
+		await this.plugin.app.vault.createFolder(path);
+	}
+
 	private toMentionedItem(result: MentionSearchResult): MentionedItem {
 		return {
 			type: result.type,
@@ -1093,5 +1386,46 @@ export class PorygonView extends ItemView {
 			this.plugin.settings.ollamaChatModel &&
 			this.plugin.settings.ollamaEmbeddingModel
 		);
+	}
+}
+
+class SaveBeforeNewConversationModal extends Modal {
+	private plugin: PorygonPlugin;
+	private resolve: (decision: "yes" | "no" | "cancel") => void;
+	private didChoose = false;
+
+	constructor(plugin: PorygonPlugin, resolve: (decision: "yes" | "no" | "cancel") => void) {
+		super(plugin.app);
+		this.plugin = plugin;
+		this.resolve = resolve;
+	}
+
+	onOpen(): void {
+		this.setTitle("Start a new conversation?");
+		this.contentEl.empty();
+		this.contentEl.createEl("p", { text: "Do you want to save your conversation before starting a new one?" });
+		const actionsEl = this.contentEl.createDiv({ cls: "porygon-confirm-actions" });
+		this.createDecisionButton(actionsEl, "Yes", "yes", "mod-cta");
+		this.createDecisionButton(actionsEl, "No", "no");
+		this.createDecisionButton(actionsEl, "Cancel", "cancel");
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+		if (!this.didChoose) {
+			this.resolve("cancel");
+		}
+	}
+
+	private createDecisionButton(containerEl: HTMLElement, label: string, decision: "yes" | "no" | "cancel", extraClass = ""): void {
+		const button = containerEl.createEl("button", {
+			cls: extraClass,
+			text: label,
+		});
+		button.addEventListener("click", () => {
+			this.didChoose = true;
+			this.resolve(decision);
+			this.close();
+		});
 	}
 }
