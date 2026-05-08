@@ -6,7 +6,7 @@ import { createAgent } from "langchain";
 import defaultSystemPrompt from "../prompts/system.md";
 import { createAgentTools } from "./tools";
 
-export type AgentChatRole = "user" | "porygon";
+export type AgentChatRole = "user" | "porygon" | "file";
 
 export interface AgentChatMessage {
 	role: AgentChatRole;
@@ -171,7 +171,7 @@ function toSystemMessage(content: string): BaseMessageLike {
 
 function toLangChainMessage(message: AgentChatMessage): BaseMessageLike {
 	return {
-		role: message.role === "porygon" ? "assistant" : message.role,
+		role: message.role === "porygon" || message.role === "file" ? "assistant" : message.role,
 		content: message.content,
 	};
 }

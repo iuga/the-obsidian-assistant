@@ -1,4 +1,4 @@
-import { ItemView, MarkdownRenderer, setIcon, TFile, WorkspaceLeaf } from "obsidian";
+import { ItemView, MarkdownRenderer, setIcon, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import { AgentChatMessage, AgentToolCallIntent, streamLocalAgent } from "./agent";
 import PorygonPlugin from "./main";
 import { OllamaHttpClient, OllamaModel } from "./ollama-client";
@@ -15,17 +15,33 @@ interface SettingStep {
 	message: string;
 }
 
-type ChatRole = "user" | "porygon" | "warning";
+type ChatRole = "user" | "porygon" | "warning" | "file";
+type MentionType = "note" | "folder" | "active-note";
 
-interface MentionedNote {
+interface MentionedItem {
+	type: MentionType;
 	path: string;
 	basename: string;
+	files: MentionedFile[];
+}
+
+interface MentionedFile {
+	path: string;
+	basename: string;
+}
+
+interface MentionSearchResult {
+	type: MentionType;
+	path: string;
+	label: string;
+	title: string;
+	files: TFile[];
 }
 
 interface ChatMessage {
 	role: ChatRole;
 	content: string;
-	mentions?: MentionedNote[];
+	mentions?: MentionedItem[];
 	thinking?: string;
 	isThinkingCollapsed?: boolean;
 	thinkingDurationSeconds?: number;
@@ -50,9 +66,9 @@ export class PorygonView extends ItemView {
 	private mentionTagsEl: HTMLElement | null = null;
 	private mentionPopoverEl: HTMLElement | null = null;
 	private mentionKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
-	private mentionResultFiles: TFile[] = [];
+	private mentionResults: MentionSearchResult[] = [];
 	private selectedMentionResultIndex = 0;
-	private selectedNoteFiles: TFile[] = [];
+	private selectedMentions: MentionedItem[] = [];
 	private isStreaming = false;
 	private healthIntervalId: number | null = null;
 	private isHealthy = false;
@@ -140,10 +156,15 @@ export class PorygonView extends ItemView {
 			return;
 		}
 
+		if (message.role === "file") {
+			return;
+		}
+
 		const row = this.chatHistoryEl.createDiv({ cls: `porygon-message-row is-${message.role}` });
 		const messageStack = row.createDiv({ cls: "porygon-message-stack" });
 		if (message.role === "user" && message.mentions && message.mentions.length > 0) {
-			this.renderMentionTagList(messageStack, message.mentions, false);
+			const messageMentionTagsEl = messageStack.createDiv({ cls: "porygon-mention-tags" });
+			this.renderMentionTagList(messageMentionTagsEl, message.mentions, false);
 		}
 		if (message.role === "porygon" && message.thinking) {
 			this.renderThinkingBubble(messageStack, message);
@@ -239,11 +260,16 @@ export class PorygonView extends ItemView {
 		setIcon(this.sendButtonEl, "send-horizontal");
 		this.updateSendButtonState();
 
-		this.composerInputEl.addEventListener("input", () => this.updateSendButtonState());
+		this.composerInputEl.addEventListener("input", () => this.handleComposerInput());
 		this.composerInputEl.addEventListener("keydown", (event) => {
 			if (event.key === "Escape" && this.mentionPopoverEl) {
 				event.preventDefault();
 				this.closeMentionPopover();
+				return;
+			}
+
+			if (event.key === "@" && !this.mentionPopoverEl) {
+				window.setTimeout(() => this.renderMentionPopover(composer), 0);
 				return;
 			}
 
@@ -522,7 +548,7 @@ export class PorygonView extends ItemView {
 
 	private startNewChat(): void {
 		this.messages = [];
-		this.selectedNoteFiles = [];
+		this.selectedMentions = [];
 		this.renderMentionTags();
 		this.closeMentionPopover();
 		this.updateSendButtonState();
@@ -536,17 +562,17 @@ export class PorygonView extends ItemView {
 		}
 
 		this.mentionTagsEl.empty();
-		this.renderMentionTagList(this.mentionTagsEl, this.selectedNoteFiles.map((file) => this.toMentionedNote(file)), true);
+		this.renderMentionTagList(this.mentionTagsEl, this.selectedMentions, true);
 	}
 
-	private renderMentionTagList(containerEl: HTMLElement, mentions: MentionedNote[], isRemovable: boolean): void {
+	private renderMentionTagList(containerEl: HTMLElement, mentions: MentionedItem[], isRemovable: boolean): void {
 		mentions.forEach((mention) => {
 			const tag = containerEl.createEl(isRemovable ? "button" : "div", {
 				cls: "porygon-mention-tag",
 				attr: { title: mention.path, "aria-label": isRemovable ? `Remove ${mention.basename}` : mention.basename },
 			});
 			const noteIcon = tag.createSpan({ cls: "porygon-mention-tag-icon" });
-			setIcon(noteIcon, "sticky-note");
+			setIcon(noteIcon, this.getMentionIcon(mention.type));
 			tag.createSpan({ cls: "porygon-mention-tag-title", text: mention.basename });
 
 			if (!isRemovable) {
@@ -555,7 +581,7 @@ export class PorygonView extends ItemView {
 
 			const removeIcon = tag.createSpan({ cls: "porygon-mention-tag-remove" });
 			setIcon(removeIcon, "x");
-			tag.addEventListener("click", () => this.removeMentionedNoteByPath(mention.path));
+			tag.addEventListener("click", () => this.removeMentionedItemByPath(mention.path));
 		});
 	}
 
@@ -572,12 +598,13 @@ export class PorygonView extends ItemView {
 		this.closeMentionPopover();
 		const popover = composerEl.createDiv({ cls: "porygon-mention-popover" });
 		this.mentionPopoverEl = popover;
-		const filterInput = popover.createEl("input", {
+		const panel = popover.createDiv({ cls: "porygon-mention-panel" });
+		const filterInput = panel.createEl("input", {
 			cls: "porygon-mention-filter",
-			attr: { type: "text", placeholder: "Filter notes..." },
+			attr: { type: "text", placeholder: "Filter notes and folders..." },
 		});
-		const notesEl = popover.createDiv({ cls: "porygon-mention-results" });
-		const renderNotes = () => this.renderMentionNoteResults(notesEl, filterInput.value);
+		const notesEl = panel.createDiv({ cls: "porygon-mention-results" });
+		const renderNotes = () => this.renderMentionResults(notesEl, filterInput.value);
 
 		filterInput.addEventListener("input", () => {
 			this.selectedMentionResultIndex = 0;
@@ -615,9 +642,9 @@ export class PorygonView extends ItemView {
 		if (event.key === "Enter") {
 			event.preventDefault();
 			event.stopPropagation();
-			const selectedFile = this.mentionResultFiles[this.selectedMentionResultIndex];
-			if (selectedFile) {
-				this.addMentionedNote(selectedFile);
+			const selectedResult = this.mentionResults[this.selectedMentionResultIndex];
+			if (selectedResult) {
+				this.addMentionedItem(selectedResult);
 				return;
 			}
 
@@ -626,70 +653,168 @@ export class PorygonView extends ItemView {
 		}
 	}
 
-	private renderMentionNoteResults(containerEl: HTMLElement, query: string): void {
+	private renderMentionResults(containerEl: HTMLElement, query: string): void {
 		containerEl.empty();
-		const normalizedQuery = query.trim().toLowerCase();
-		const unavailablePaths = this.getUnavailableMentionPaths();
-		const files = this.plugin.app.vault.getMarkdownFiles()
-			.filter((file) => !unavailablePaths.has(file.path))
-			.filter((file) => {
-				if (!normalizedQuery) {
-					return true;
-				}
+		const results = this.getMentionResults(query);
+		this.mentionResults = results;
+		this.selectedMentionResultIndex = Math.min(this.selectedMentionResultIndex, Math.max(results.length - 1, 0));
 
-				return file.basename.toLowerCase().includes(normalizedQuery) || file.path.toLowerCase().includes(normalizedQuery);
-			})
-			.sort((first, second) => first.path.localeCompare(second.path));
-		this.mentionResultFiles = files;
-		this.selectedMentionResultIndex = Math.min(this.selectedMentionResultIndex, Math.max(files.length - 1, 0));
-
-		if (files.length === 0) {
-			containerEl.createDiv({ cls: "porygon-mention-empty", text: "No notes found" });
+		if (results.length === 0) {
+			containerEl.createDiv({ cls: "porygon-mention-empty", text: "No notes or folders found" });
 			return;
 		}
 
-		files.forEach((file, index) => {
-			const noteButton = containerEl.createEl("button", {
+		results.forEach((result, index) => {
+			const mentionButton = containerEl.createEl("button", {
 				cls: "porygon-mention-result",
-				attr: { title: file.path, "aria-label": `Mention ${file.path}`, type: "button" },
+				attr: { title: result.title, "aria-label": `Mention ${result.title}`, type: "button" },
 			});
-			noteButton.toggleClass("is-selected", index === this.selectedMentionResultIndex);
-			noteButton.createSpan({ cls: "porygon-mention-result-path", text: file.path });
-			noteButton.addEventListener("click", (event) => {
+			mentionButton.toggleClass("is-selected", index === this.selectedMentionResultIndex);
+			const iconEl = mentionButton.createSpan({ cls: "porygon-mention-result-icon" });
+			setIcon(iconEl, this.getMentionIcon(result.type));
+			mentionButton.createSpan({ cls: "porygon-mention-result-path", text: result.label });
+			mentionButton.addEventListener("click", (event) => {
 				event.preventDefault();
 				event.stopPropagation();
-				this.addMentionedNote(file);
+				this.addMentionedItem(result);
 			});
 		});
 	}
 
 	private moveMentionSelection(direction: number, containerEl: HTMLElement, query: string): void {
-		if (this.mentionResultFiles.length === 0) {
+		if (this.mentionResults.length === 0) {
 			return;
 		}
 
-		this.selectedMentionResultIndex = (this.selectedMentionResultIndex + direction + this.mentionResultFiles.length) % this.mentionResultFiles.length;
-		this.renderMentionNoteResults(containerEl, query);
+		this.selectedMentionResultIndex = (this.selectedMentionResultIndex + direction + this.mentionResults.length) % this.mentionResults.length;
+		this.renderMentionResults(containerEl, query);
 		const selectedEl = containerEl.querySelector<HTMLElement>(".porygon-mention-result.is-selected");
 		selectedEl?.scrollIntoView({ block: "nearest" });
 	}
 
-	private addMentionedNote(file: TFile): void {
-		if (this.getUnavailableMentionPaths().has(file.path)) {
+	private getMentionResults(query: string): MentionSearchResult[] {
+		const normalizedQuery = query.trim().toLowerCase();
+		const unavailablePaths = this.getUnavailableMentionPaths();
+		const results: MentionSearchResult[] = [];
+		const activeFile = this.plugin.app.workspace.getActiveFile();
+
+		if (activeFile instanceof TFile && activeFile.extension === "md" && !unavailablePaths.has(activeFile.path)) {
+			results.push({
+				type: "active-note",
+				path: activeFile.path,
+				label: "Active Note",
+				title: activeFile.path,
+				files: [activeFile],
+			});
+		}
+
+		this.plugin.app.vault.getMarkdownFiles()
+			.filter((file) => !unavailablePaths.has(file.path))
+			.map((file): MentionSearchResult => ({
+				type: "note",
+				path: file.path,
+				label: file.path,
+				title: file.path,
+				files: [file],
+			}))
+			.forEach((result) => results.push(result));
+
+		this.plugin.app.vault.getAllFolders(false)
+			.filter((folder) => !unavailablePaths.has(folder.path))
+			.map((folder): MentionSearchResult => ({
+				type: "folder",
+				path: folder.path,
+				label: folder.path,
+				title: folder.path,
+				files: this.getDirectMarkdownFiles(folder),
+			}))
+			.forEach((result) => results.push(result));
+
+		return results
+			.filter((result) => this.doesMentionResultMatch(result, normalizedQuery))
+			.sort((first, second) => this.getMentionSortValue(first).localeCompare(this.getMentionSortValue(second)));
+	}
+
+	private doesMentionResultMatch(result: MentionSearchResult, normalizedQuery: string): boolean {
+		if (!normalizedQuery) {
+			return true;
+		}
+
+		return result.label.toLowerCase().includes(normalizedQuery) || result.path.toLowerCase().includes(normalizedQuery);
+	}
+
+	private getMentionSortValue(result: MentionSearchResult): string {
+		if (result.type === "active-note") {
+			return `0-${result.path}`;
+		}
+
+		return `${result.type === "folder" ? "1" : "2"}-${result.path}`;
+	}
+
+	private getDirectMarkdownFiles(folder: TFolder): TFile[] {
+		return folder.children
+			.filter((child): child is TFile => child instanceof TFile && child.extension === "md")
+			.sort((first, second) => first.path.localeCompare(second.path));
+	}
+
+	private addMentionedItem(result: MentionSearchResult): void {
+		if (this.getUnavailableMentionPaths().has(result.path)) {
 			this.closeMentionPopover();
 			this.composerInputEl?.focus();
 			return;
 		}
 
-		this.selectedNoteFiles = [...this.selectedNoteFiles, file];
+		const mention = this.toMentionedItem(result);
+		this.selectedMentions = [...this.selectedMentions, mention];
+		this.insertMentionLink(mention);
 		this.renderMentionTags();
 		this.updateSendButtonState();
 		this.closeMentionPopover();
 		this.composerInputEl?.focus();
 	}
 
-	private removeMentionedNoteByPath(path: string): void {
-		this.selectedNoteFiles = this.selectedNoteFiles.filter((selectedFile) => selectedFile.path !== path);
+	private insertMentionLink(mention: MentionedItem): void {
+		if (!this.composerInputEl) {
+			return;
+		}
+
+		const link = this.getMentionLink(mention);
+		const selectionStart = this.composerInputEl.selectionStart;
+		const selectionEnd = this.composerInputEl.selectionEnd;
+		const value = this.composerInputEl.value;
+		const atIndex = value.lastIndexOf("@", selectionStart - 1);
+		const replaceStart = atIndex === -1 ? selectionStart : atIndex;
+		this.composerInputEl.value = `${value.slice(0, replaceStart)}${link}${value.slice(selectionEnd)}`;
+		const cursor = replaceStart + link.length;
+		this.composerInputEl.setSelectionRange(cursor, cursor);
+	}
+
+	private handleComposerInput(): void {
+		this.syncMentionsWithComposerText();
+		this.updateSendButtonState();
+	}
+
+	private syncMentionsWithComposerText(): void {
+		if (!this.composerInputEl || this.selectedMentions.length === 0) {
+			return;
+		}
+
+		const content = this.composerInputEl.value;
+		const syncedMentions = this.selectedMentions.filter((mention) => content.includes(this.getMentionLink(mention)));
+		if (syncedMentions.length === this.selectedMentions.length) {
+			return;
+		}
+
+		this.selectedMentions = syncedMentions;
+		this.renderMentionTags();
+	}
+
+	private getMentionLink(mention: MentionedItem): string {
+		return `[[${mention.basename}]]`;
+	}
+
+	private removeMentionedItemByPath(path: string): void {
+		this.selectedMentions = this.selectedMentions.filter((selectedMention) => selectedMention.path !== path);
 		this.renderMentionTags();
 		this.updateSendButtonState();
 		this.composerInputEl?.focus();
@@ -703,12 +828,12 @@ export class PorygonView extends ItemView {
 
 		this.mentionPopoverEl?.remove();
 		this.mentionPopoverEl = null;
-		this.mentionResultFiles = [];
+		this.mentionResults = [];
 		this.selectedMentionResultIndex = 0;
 	}
 
 	private getUnavailableMentionPaths(): Set<string> {
-		const paths = new Set(this.selectedNoteFiles.map((file) => file.path));
+		const paths = new Set(this.selectedMentions.map((mention) => mention.path));
 		this.messages.forEach((message) => {
 			message.mentions?.forEach((mention) => paths.add(mention.path));
 		});
@@ -725,7 +850,7 @@ export class PorygonView extends ItemView {
 		this.sendButtonEl.toggleClass("is-unhealthy", !this.isHealthy);
 		setIcon(this.sendButtonEl, this.isHealthy ? "send-horizontal" : "unlink");
 
-		const hasMessage = this.composerInputEl.value.trim().length > 0 || this.selectedNoteFiles.length > 0;
+		const hasMessage = this.composerInputEl.value.trim().length > 0 || this.selectedMentions.length > 0;
 		this.sendButtonEl.disabled = this.isHealthy && (!hasMessage || this.isStreaming);
 		const tooltip = this.isHealthy ? (hasMessage ? "Send message" : "Type a message...") : "Ollama is unreachable";
 		this.sendButtonEl.title = tooltip;
@@ -738,8 +863,8 @@ export class PorygonView extends ItemView {
 		}
 
 		const content = this.composerInputEl.value.trim();
-		const mentionedNoteFiles = [...this.selectedNoteFiles];
-		if (!content && mentionedNoteFiles.length === 0) {
+		const mentionSnapshots = [...this.selectedMentions];
+		if (!content && mentionSnapshots.length === 0) {
 			this.updateSendButtonState();
 			return;
 		}
@@ -749,13 +874,13 @@ export class PorygonView extends ItemView {
 			return;
 		}
 
-		const mentionSnapshots = mentionedNoteFiles.map((file) => this.toMentionedNote(file));
-
 		this.composerInputEl.value = "";
-		this.selectedNoteFiles = [];
+		this.selectedMentions = [];
 		this.renderMentionTags();
 		this.closeMentionPopover();
 		this.messages.push({ role: "user", content, mentions: mentionSnapshots });
+		const fileMessages = await this.createFileContextMessages(mentionSnapshots);
+		this.messages.push(...fileMessages);
 		const porygonMessage: ChatMessage = { role: "porygon", content: this.plugin.settings.ollamaThinking ? "" : "Thinking..." };
 		this.messages.push(porygonMessage);
 		this.isStreaming = true;
@@ -839,44 +964,54 @@ export class PorygonView extends ItemView {
 
 	private async buildAgentMessages(excludedMessage: ChatMessage): Promise<AgentChatMessage[]> {
 		const messages = this.messages.filter((message): message is ChatMessage & { role: AgentChatMessage["role"] } =>
-			(message.role === "user" || message.role === "porygon") && message !== excludedMessage,
+			(message.role === "user" || message.role === "porygon" || message.role === "file") && message !== excludedMessage,
 		);
-		return Promise.all(messages.map(async (message) => ({
+		return messages.map((message) => ({
 			role: message.role,
-			content: await this.buildAgentMessageContent(message),
-		})));
+			content: this.buildAgentMessageContent(message),
+		}));
 	}
 
-	private async buildAgentMessageContent(message: ChatMessage): Promise<string> {
-		const mentions = message.mentions ?? [];
-		if (mentions.length === 0) {
-			return message.content;
-		}
-
-		const noteContext = await this.getMentionedNotesContext(mentions);
-		return `${noteContext}\n\n${message.content}`.trim();
+	private buildAgentMessageContent(message: ChatMessage): string {
+		return message.content;
 	}
 
-	private async getMentionedNotesContext(mentions: MentionedNote[]): Promise<string> {
-		if (mentions.length === 0) {
-			return "";
-		}
-
-		const noteContents = await Promise.all(mentions.map(async (mention) => {
-			const file = this.plugin.app.vault.getAbstractFileByPath(mention.path);
+	private async createFileContextMessages(mentions: MentionedItem[]): Promise<ChatMessage[]> {
+		const fileMentions = mentions.flatMap((mention) => mention.files);
+		return Promise.all(fileMentions.map(async (mentionFile): Promise<ChatMessage> => {
+			const file = this.plugin.app.vault.getAbstractFileByPath(mentionFile.path);
 			if (!(file instanceof TFile)) {
-				return `# ${mention.basename}\n\nNote not found: ${mention.path}`;
+				return { role: "file", content: `Attached Obsidian file not found: ${mentionFile.path}` };
 			}
 
 			const content = await this.plugin.app.vault.cachedRead(file);
-			return `# ${file.basename}\n\n${content}`;
+			return { role: "file", content: `<file path="${file.path}">\n${content}\n</file>` };
 		}));
-
-		return `Use these Obsidian notes as context:\n\n${noteContents.join("\n\n---\n\n")}`;
 	}
 
-	private toMentionedNote(file: TFile): MentionedNote {
+	private toMentionedItem(result: MentionSearchResult): MentionedItem {
+		return {
+			type: result.type,
+			path: result.path,
+			basename: result.type === "active-note" ? result.files[0]?.basename ?? result.label : result.path.split("/").last() ?? result.label,
+			files: result.files.map((file) => this.toMentionedFile(file)),
+		};
+	}
+
+	private toMentionedFile(file: TFile): MentionedFile {
 		return { path: file.path, basename: file.basename };
+	}
+
+	private getMentionIcon(type: MentionType): string {
+		if (type === "folder") {
+			return "folder";
+		}
+
+		if (type === "active-note") {
+			return "star";
+		}
+
+		return "sticky-note";
 	}
 
 	private scrollChatToBottom(): void {
