@@ -135,64 +135,40 @@ export function createEditTool(app: App) {
 		async ({ file_path: filePath, old_string: oldString, new_string: newString, replace_all: replaceAll = false }: { file_path: string; old_string: string; new_string: string; replace_all?: boolean }): Promise<string> => {
 			const filename = normalizeMarkdownPath(filePath);
 			const file = app.vault.getAbstractFileByPath(filename);
-			console.debug("[tool] edit", {
-				filePath,
-				filename,
-				oldString,
-				newString,
-				replaceAll,
-				fileExists: Boolean(file),
-			});
 
 			try {
 				if (!oldString) {
 					if (file) {
-						const error = `file already exists: ${filename}`;
-						console.error("[tool] edit error", error);
-						return error;
+						return `file already exists: ${filename}`;
 					}
 
 					await app.vault.create(filename, newString);
-					const result = stringifyEditMetadata("", newString);
-					console.debug("[tool] edit result", result);
-					return result;
+					return stringifyEditMetadata("", newString);
 				}
 
 				if (!(file instanceof TFile)) {
-					const error = `file not found: ${filename}`;
-					console.error("[tool] edit error", error);
-					return error;
+					return `file not found: ${filename}`;
 				}
 
 				const oldContent = await app.vault.cachedRead(file);
 				const matchCount = countOccurrences(oldContent, oldString);
 				if (matchCount === 0) {
-					const error = "old_string not found in file. Make sure it matches exactly, including whitespace and line breaks.";
-					console.error("[tool] edit error", error);
-					return error;
+					return "old_string not found in file. Make sure it matches exactly, including whitespace and line breaks.";
 				}
 
 				if (!replaceAll && matchCount > 1) {
-					const error = "old_string appears multiple times in the file. Please provide more context to ensure a unique match, or set replace_all to true";
-					console.error("[tool] edit error", error);
-					return error;
+					return "old_string appears multiple times in the file. Please provide more context to ensure a unique match, or set replace_all to true";
 				}
 
 				const newContent = replaceAll ? oldContent.split(oldString).join(newString) : oldContent.replace(oldString, newString);
 				if (oldContent === newContent) {
-					const error = "new content is the same as old content. No changes made.";
-					console.error("[tool] edit error", error);
-					return error;
+					return "new content is the same as old content. No changes made.";
 				}
 
 				await app.vault.modify(file, newContent);
-				const result = stringifyEditMetadata(oldContent, newContent);
-				console.debug("[tool] edit result", result);
-				return result;
+				return stringifyEditMetadata(oldContent, newContent);
 			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				console.error("[tool] edit error", message, error);
-				return message;
+				return error instanceof Error ? error.message : String(error);
 			}
 		},
 		{

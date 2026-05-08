@@ -122,6 +122,7 @@
 	border-radius: 0;
 	background: transparent;
 	color: var(--text-muted);
+	font-size: var(--font-ui-small);
 }
 
 .porygon-thinking-summary {
@@ -168,6 +169,7 @@
 	border-radius: 0;
 	background: transparent;
 	color: var(--text-muted);
+	font-size: var(--font-ui-small);
 }
 
 .porygon-tools-summary {
@@ -216,15 +218,15 @@
 	gap: var(--size-4-2);
 	padding: var(--size-4-3);
 	border-radius: var(--radius-l);
-	background: #e5f2fc;
-	color: #000;
+	background: var(--background-secondary);
+	color: var(--text-normal);
 }
 
 .porygon-chat-warning-icon {
 	display: flex;
 	flex: 0 0 auto;
 	align-items: flex-start;
-	color: #000;
+	color: var(--text-normal);
 }
 
 .porygon-chat-warning-icon svg {
@@ -604,8 +606,8 @@
 	gap: var(--size-4-2);
 	padding: var(--size-4-3);
 	border-radius: var(--radius-s);
-	background: #e5f2fc;
-	color: #000;
+	background: var(--background-secondary);
+	color: var(--text-normal);
 	font-size: var(--font-ui-small);
 }
 
@@ -613,7 +615,7 @@
 	display: flex;
 	flex: 0 0 auto;
 	padding-top: 1px;
-	color: #000;
+	color: var(--text-normal);
 }
 
 .porygon-hint-icon svg {
@@ -634,8 +636,8 @@
 	display: inline-block;
 	padding: var(--size-2-1) var(--size-2-2);
 	border-radius: var(--radius-s);
-	background: rgba(255, 255, 255, 0.6);
-	color: #000;
+	background: var(--background-primary);
+	color: var(--text-normal);
 }
 
 .porygon-primary-button {

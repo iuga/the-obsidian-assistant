@@ -82,9 +82,10 @@ export class PorygonView extends ItemView {
 		this.render();
 	}
 
-	async onClose(): Promise<void> {
+	onClose(): Promise<void> {
 		this.stopHealthPolling();
 		this.contentEl.empty();
+		return Promise.resolve();
 	}
 
 	private render(): void {
