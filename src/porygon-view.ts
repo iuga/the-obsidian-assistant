@@ -1145,7 +1145,7 @@ export class PorygonView extends ItemView {
 				ollamaChatModel: this.plugin.settings.ollamaChatModel,
 				ollamaThinking: this.plugin.settings.ollamaThinking,
 				personalPrompt: this.plugin.settings.personalPrompt.trim(),
-				messages: await this.buildAgentMessages(porygonMessage),
+				messages: this.buildAgentMessages(porygonMessage),
 			}, {
 				onToolIntent: (toolIntent) => {
 					if (!hasStartedStreamingContent && porygonMessage.content === "Thinking...") {
@@ -1211,7 +1211,7 @@ export class PorygonView extends ItemView {
 		return Math.max(1, Math.round((Date.now() - startedAt) / 1000));
 	}
 
-	private async buildAgentMessages(excludedMessage: ChatMessage): Promise<AgentChatMessage[]> {
+	private buildAgentMessages(excludedMessage: ChatMessage): AgentChatMessage[] {
 		const messages = this.messages.filter((message): message is ChatMessage & { role: AgentChatMessage["role"] } =>
 			(message.role === "user" || message.role === "porygon" || message.role === "file") && message !== excludedMessage,
 		);
