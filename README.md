@@ -41,8 +41,9 @@ Porygon can use these vault tools during a conversation:
 | `search` | `search(queryString: string)` | Searches all Markdown notes with Obsidian's `prepareSimpleSearch` and returns matching note paths with 1-based line numbers. |
 | `view` | `view(linkToMarkdownfile: string, line?: number, surrounding?: number, offset?: number, limit?: number)` | Reads a note with line numbers. If `line` is provided, returns that line with surrounding context; otherwise supports `offset` and `limit`. |
 | `edit` | `edit(file_path: string, old_string: string, new_string: string, replace_all?: boolean)` | Creates notes, deletes content, or replaces exact text in existing notes. |
+| `rename` | `rename(source_path: string, destination_path: string)` | Renames or moves a vault file or folder by exact vault-relative path and updates internal links through Obsidian's `FileManager.renameFile`. |
 
-`list`, `search`, and `edit` return JSON strings so the local agent can consume them reliably.
+`list`, `search`, `edit`, and `rename` return JSON strings so the local agent can consume them reliably.
 
 ### Optional thinking support
 
@@ -106,6 +107,7 @@ When you send a message, the following data may be sent to your configured Ollam
 - Your chat message
 - The latest content of notes you explicitly mention
 - Prior conversation history in the current Porygon session
+- Tool results, including vault paths returned by list, search, edit, view, or rename operations
 
 If your Ollama host is local, this stays on your machine. If you configure a remote Ollama host, data is sent to that host.
 

@@ -71,6 +71,16 @@ const SLASH_COMMANDS: SlashCommand[] = [
 	{ id: "save", label: "Save conversation", syntax: "/save", description: "Save this conversation to a note.", icon: "save" },
 ];
 
+const MESSAGE_INPUT_PLACEHOLDER = "How can I help you today? - / for commands - @ for mentions";
+const EMPTY_CHAT_QUOTES: [string, ...string[]] = [
+	"What shall we make clearer today?",
+	"Bring me a thought, I’ll bring a plan",
+	"What deserves your attention next?",
+	"Ready when your next idea is",
+	"What can I help untangle?",
+	"Start anywhere, we’ll shape it together",
+];
+
 export class PorygonView extends ItemView {
 	private plugin: PorygonPlugin;
 	private screen: OnboardingScreen = "welcome";
@@ -91,8 +101,8 @@ export class PorygonView extends ItemView {
 	private filteredSlashCommands: SlashCommand[] = [];
 	private selectedSlashCommandIndex = 0;
 	private isStreaming = false;
-	private healthIntervalId: number | null = null;
-	private isHealthy = false;
+	private isCheckingHealth = false;
+	private isHealthy = true;
 
 	constructor(leaf: WorkspaceLeaf, plugin: PorygonPlugin) {
 		super(leaf);
@@ -120,13 +130,11 @@ export class PorygonView extends ItemView {
 	}
 
 	onClose(): Promise<void> {
-		this.stopHealthPolling();
 		this.contentEl.empty();
 		return Promise.resolve();
 	}
 
 	private render(): void {
-		this.stopHealthPolling();
 		this.contentEl.empty();
 		this.contentEl.addClass("porygon-view");
 
@@ -150,7 +158,7 @@ export class PorygonView extends ItemView {
 		this.chatHistoryEl = main.createDiv({ cls: "porygon-chat-history" });
 		this.renderMessages();
 		this.renderComposer(main);
-		this.startHealthPolling();
+		void this.updateHealthStatus();
 	}
 
 	private renderMessages(): void {
@@ -159,8 +167,27 @@ export class PorygonView extends ItemView {
 		}
 
 		this.chatHistoryEl.empty();
+		if (this.messages.length === 0) {
+			this.renderEmptyChatQuote();
+			return;
+		}
+
 		this.messages.forEach((message) => this.renderMessage(message));
 		this.scrollChatToBottom();
+	}
+
+	private renderEmptyChatQuote(): void {
+		this.chatHistoryEl?.createDiv({ cls: "porygon-empty-chat-quote", text: this.getDailyEmptyChatQuote() });
+	}
+
+	private getDailyEmptyChatQuote(): string {
+		const today = new Date().toISOString().slice(0, 10);
+		const quoteIndex = this.hashString(today) % EMPTY_CHAT_QUOTES.length;
+		return EMPTY_CHAT_QUOTES[quoteIndex] ?? EMPTY_CHAT_QUOTES[0];
+	}
+
+	private hashString(value: string): number {
+		return [...value].reduce((hash, character) => ((hash << 5) - hash + character.charCodeAt(0)) >>> 0, 0);
 	}
 
 	private renderMessage(message: ChatMessage): void {
@@ -258,7 +285,7 @@ export class PorygonView extends ItemView {
 		composer.createDiv({ cls: "porygon-attachments" });
 		this.composerInputEl = composer.createEl("textarea", {
 			cls: "porygon-message-input",
-			attr: { placeholder: "Ask anything..." },
+			attr: { placeholder: MESSAGE_INPUT_PLACEHOLDER },
 		});
 		const actionsRow = composer.createDiv({ cls: "porygon-composer-actions" });
 		const leftActions = actionsRow.createDiv({ cls: "porygon-composer-left-actions" });
@@ -380,11 +407,11 @@ export class PorygonView extends ItemView {
 
 		if (isComplete) {
 			const value = this.plugin.settings[step.key];
-			header.createEl("span", { cls: "porygon-step-value", text: value });
+			header.createSpan({ cls: "porygon-step-value", text: value });
 			return;
 		}
 
-		header.createEl("span", { cls: "porygon-step-message", text: step.message });
+		header.createSpan({ cls: "porygon-step-message", text: step.message });
 	}
 
 	private renderStepEditor(containerEl: HTMLElement, stepKey: OnboardingSettingKey): void {
@@ -794,7 +821,7 @@ export class PorygonView extends ItemView {
 			}))
 			.forEach((result) => results.push(result));
 
-		this.plugin.app.vault.getAllFolders(false)
+		this.getAllVaultFolders()
 			.filter((folder) => !unavailablePaths.has(folder.path))
 			.map((folder): MentionSearchResult => ({
 				type: "folder",
@@ -824,6 +851,23 @@ export class PorygonView extends ItemView {
 		}
 
 		return `${result.type === "folder" ? "1" : "2"}-${result.path}`;
+	}
+
+	private getAllVaultFolders(): TFolder[] {
+		const folders: TFolder[] = [];
+		const collectFolders = (folder: TFolder) => {
+			folder.children.forEach((child) => {
+				if (!(child instanceof TFolder)) {
+					return;
+				}
+
+				folders.push(child);
+				collectFolders(child);
+			});
+		};
+
+		collectFolders(this.plugin.app.vault.getRoot());
+		return folders;
 	}
 
 	private getDirectMarkdownFiles(folder: TFolder): TFile[] {
@@ -1099,10 +1143,22 @@ export class PorygonView extends ItemView {
 		setIcon(this.sendButtonEl, this.isHealthy ? "send-horizontal" : "unlink");
 
 		const hasMessage = this.composerInputEl.value.trim().length > 0 || this.selectedMentions.length > 0;
-		this.sendButtonEl.disabled = this.isHealthy && (!hasMessage || this.isStreaming);
-		const tooltip = this.isHealthy ? (hasMessage ? "Send message" : "Type a message...") : "Ollama is unreachable";
+		this.sendButtonEl.disabled = !hasMessage || this.isStreaming || this.isCheckingHealth;
+		const tooltip = this.getSendButtonTooltip(hasMessage);
 		this.sendButtonEl.title = tooltip;
 		this.sendButtonEl.ariaLabel = tooltip;
+	}
+
+	private getSendButtonTooltip(hasMessage: boolean): string {
+		if (this.isCheckingHealth) {
+			return "Checking Ollama...";
+		}
+
+		if (!hasMessage) {
+			return "Type a message...";
+		}
+
+		return this.isHealthy ? "Send message" : "Ollama is unreachable. Send to retry.";
 	}
 
 	private async sendCurrentMessage(): Promise<void> {
@@ -1117,8 +1173,12 @@ export class PorygonView extends ItemView {
 			return;
 		}
 
-		if (!this.isHealthy) {
-			this.updateSendButtonState();
+		this.isCheckingHealth = true;
+		this.updateSendButtonState();
+		const isOllamaReachable = await this.updateHealthStatus();
+		this.isCheckingHealth = false;
+		this.updateSendButtonState();
+		if (!isOllamaReachable) {
 			return;
 		}
 
@@ -1130,7 +1190,7 @@ export class PorygonView extends ItemView {
 		this.messages.push({ role: "user", content, createdAt, mentions: mentionSnapshots });
 		const fileMessages = await this.createFileContextMessages(mentionSnapshots);
 		this.messages.push(...fileMessages);
-		const porygonMessage: ChatMessage = { role: "porygon", content: this.plugin.settings.ollamaThinking ? "" : "Thinking...", createdAt: new Date().toISOString() };
+		const porygonMessage: ChatMessage = { role: "porygon", content: "Thinking...", createdAt: new Date().toISOString() };
 		this.messages.push(porygonMessage);
 		this.isStreaming = true;
 		this.updateSendButtonState();
@@ -1139,6 +1199,11 @@ export class PorygonView extends ItemView {
 		try {
 			let thinkingStartedAt: number | null = null;
 			let hasStartedStreamingContent = false;
+			const clearPendingAnswerPlaceholder = () => {
+				if (!hasStartedStreamingContent && porygonMessage.content === "Thinking...") {
+					porygonMessage.content = "";
+				}
+			};
 			await streamLocalAgent({
 				app: this.plugin.app,
 				ollamaHost: this.getOllamaBaseUrl(),
@@ -1148,25 +1213,19 @@ export class PorygonView extends ItemView {
 				messages: this.buildAgentMessages(porygonMessage),
 			}, {
 				onToolIntent: (toolIntent) => {
-					if (!hasStartedStreamingContent && porygonMessage.content === "Thinking...") {
-						porygonMessage.content = "";
-					}
+					clearPendingAnswerPlaceholder();
 					porygonMessage.toolIntents = [...(porygonMessage.toolIntents ?? []), toolIntent];
 					porygonMessage.areToolsCollapsed = false;
 					this.renderMessages();
 				},
 				onContentDelta: (delta) => {
-					if (!hasStartedStreamingContent) {
-						if (porygonMessage.content === "Thinking...") {
-							porygonMessage.content = "";
-						}
-						hasStartedStreamingContent = true;
-					}
-
+					clearPendingAnswerPlaceholder();
+					hasStartedStreamingContent = true;
 					porygonMessage.content += delta;
 					this.renderMessages();
 				},
 				onThinkingDelta: (delta) => {
+					clearPendingAnswerPlaceholder();
 					thinkingStartedAt = thinkingStartedAt ?? Date.now();
 					porygonMessage.thinking = `${porygonMessage.thinking ?? ""}${delta}`;
 					porygonMessage.isThinkingCollapsed = false;
@@ -1252,9 +1311,9 @@ export class PorygonView extends ItemView {
 			const filename = `porygon/conversation_${timestamp}.md`;
 			const content = this.formatConversationForSave(visibleMessages);
 			await this.ensureFolderExists("porygon");
-			const existingFile = this.plugin.app.vault.getFileByPath(filename);
+			const existingFile = this.plugin.app.vault.getAbstractFileByPath(filename);
 
-			if (existingFile) {
+			if (existingFile instanceof TFile) {
 				await this.plugin.app.vault.modify(existingFile, content);
 			} else {
 				await this.plugin.app.vault.create(filename, content);
@@ -1275,11 +1334,12 @@ export class PorygonView extends ItemView {
 	}
 
 	private async ensureFolderExists(path: string): Promise<void> {
-		if (this.plugin.app.vault.getFolderByPath(path)) {
+		const existingFolder = this.plugin.app.vault.getAbstractFileByPath(path);
+		if (existingFolder instanceof TFolder) {
 			return;
 		}
 
-		await this.plugin.app.vault.createFolder(path);
+		await this.plugin.app.vault.adapter.mkdir(path);
 	}
 
 	private toMentionedItem(result: MentionSearchResult): MentionedItem {
@@ -1315,24 +1375,7 @@ export class PorygonView extends ItemView {
 		this.chatHistoryEl.scrollTop = this.chatHistoryEl.scrollHeight;
 	}
 
-	private startHealthPolling(): void {
-		this.stopHealthPolling();
-		void this.updateHealthStatus();
-		this.healthIntervalId = window.setInterval(() => {
-			void this.updateHealthStatus();
-		}, 5000);
-	}
-
-	private stopHealthPolling(): void {
-		if (this.healthIntervalId === null) {
-			return;
-		}
-
-		window.clearInterval(this.healthIntervalId);
-		this.healthIntervalId = null;
-	}
-
-	private async updateHealthStatus(): Promise<void> {
+	private async updateHealthStatus(): Promise<boolean> {
 		try {
 			await this.createOllamaClient().version();
 			this.isHealthy = true;
@@ -1341,6 +1384,7 @@ export class PorygonView extends ItemView {
 		}
 
 		this.updateSendButtonState();
+		return this.isHealthy;
 	}
 
 	private setLoading(button: HTMLButtonElement, isLoading: boolean, loadingText = "Saving..."): void {

@@ -17,6 +17,17 @@
 	user-select: text;
 }
 
+.porygon-empty-chat-quote {
+	display: flex;
+	min-height: 100%;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-muted);
+	font-size: var(--font-ui-large);
+	font-weight: 200;
+	text-align: center;
+}
+
 .porygon-message-row {
 	display: flex;
 }

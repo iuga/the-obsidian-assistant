@@ -1,5 +1,5 @@
 import { tool } from "@langchain/core/tools";
-import { App, normalizePath, prepareSimpleSearch, TFile } from "obsidian";
+import { App, normalizePath, prepareSimpleSearch, TFile, TFolder } from "obsidian";
 import { z } from "zod";
 
 const DEFAULT_VIEW_LIMIT = 2000;
@@ -16,6 +16,12 @@ interface EditResponseMetadata {
 	removals: number;
 	old_content?: string;
 	new_content?: string;
+}
+
+interface RenameResponseMetadata {
+	source_path: string;
+	destination_path: string;
+	type: "file" | "folder";
 }
 
 const intentSchema = z.string().describe("Brief explanation in ten words or less of why you're calling this function and how it helps achieve the current goal. Use present participle form (e.g., 'Fetching...', 'Calculating...', 'Validating...'). Examples: 'Fetching all notes that contain order to gather context', 'Adding a new paragraph into the orders.md document'");
@@ -185,13 +191,73 @@ export function createEditTool(app: App) {
 	);
 }
 
+export function createRenameTool(app: App) {
+	return tool(
+		async ({ source_path: sourcePath, destination_path: destinationPath }: { source_path: string; destination_path: string }): Promise<string> => {
+			const source = normalizeVaultPath(sourcePath);
+			const destination = normalizeVaultPath(destinationPath);
+			const file = app.vault.getAbstractFileByPath(source);
+
+			try {
+				if (!source) {
+					return "source_path is required.";
+				}
+
+				if (!destination) {
+					return "destination_path is required.";
+				}
+
+				if (!file) {
+					return `source path not found: ${source}`;
+				}
+
+				if (source === destination) {
+					return "destination_path is the same as source_path. No changes made.";
+				}
+
+				if (app.vault.getAbstractFileByPath(destination)) {
+					return `destination path already exists: ${destination}`;
+				}
+
+				const parentPath = getParentPath(destination);
+				const parentFolder = parentPath ? app.vault.getAbstractFileByPath(parentPath) : null;
+				if (parentPath && !(parentFolder instanceof TFolder)) {
+					return `destination parent folder does not exist: ${parentPath}`;
+				}
+
+				await app.fileManager.renameFile(file, destination);
+				return stringifyRenameMetadata(source, destination, file instanceof TFolder ? "folder" : "file");
+			} catch (error) {
+				return error instanceof Error ? error.message : String(error);
+			}
+		},
+		{
+			name: "rename",
+			description: "Rename or move a vault file or folder by exact vault-relative path. Use list first to confirm the source path and avoid filename guessing. source_path and destination_path must be vault-relative, use forward slashes, and destination_path must not already exist. Parent folders must already exist. Include the file extension when renaming files. Uses Obsidian FileManager.renameFile so internal links are updated safely according to Obsidian behavior. Returns a JSON string with source_path, destination_path, and type.",
+			schema: z.object({
+				intent: intentSchema,
+				source_path: z.string().describe("The exact vault-relative path of the file or folder to rename or move. Use list to discover paths. Use forward slashes."),
+				destination_path: z.string().describe("The exact vault-relative destination path. It must not already exist, and its parent folder must already exist. Include the file extension for files."),
+			}),
+		}
+	);
+}
+
 export function createAgentTools(app: App) {
-	return [currentTimestampTool, createSearchTool(app), createListTool(app), createViewTool(app), createEditTool(app)];
+	return [currentTimestampTool, createSearchTool(app), createListTool(app), createViewTool(app), createEditTool(app), createRenameTool(app)];
 }
 
 function normalizeMarkdownPath(filenameMd: string): string {
 	const normalizedFilename = normalizePath(stripWikiLinkSyntax(filenameMd).replace(/\\/g, "/"));
 	return normalizedFilename.endsWith(".md") ? normalizedFilename : `${normalizedFilename}.md`;
+}
+
+function normalizeVaultPath(path: string): string {
+	return normalizePath(stripWikiLinkSyntax(path).replace(/\\/g, "/"));
+}
+
+function getParentPath(path: string): string {
+	return path.split("/").slice(0, -1).join("/");
 }
 
 function getViewOffset(line: number | undefined, surrounding: number | undefined, offset: number | undefined): number {
@@ -247,6 +313,15 @@ function stringifyEditMetadata(oldContent: string, newContent: string): string {
 		removals,
 		old_content: oldContent,
 		new_content: newContent,
+	};
+	return JSON.stringify(result);
+}
+
+function stringifyRenameMetadata(sourcePath: string, destinationPath: string, type: "file" | "folder"): string {
+	const result: RenameResponseMetadata = {
+		source_path: sourcePath,
+		destination_path: destinationPath,
+		type,
 	};
 	return JSON.stringify(result);
 }
