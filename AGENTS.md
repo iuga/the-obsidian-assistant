@@ -226,14 +226,6 @@ async onload() {
 }
 ```
 
-### Register listeners safely
-
-```ts
-this.registerEvent(this.app.workspace.on("file-open", f => { /* ... */ }));
-this.registerDomEvent(window, "resize", () => { /* ... */ });
-this.registerInterval(window.setInterval(() => { /* ... */ }, 1000));
-```
-
 ## Troubleshooting
 
 - Plugin doesn't load after build: ensure `main.js` and `manifest.json` are at the top level of the plugin folder under `<Vault>/.obsidian/plugins/<plugin-id>/`. 

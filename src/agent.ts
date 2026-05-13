@@ -49,6 +49,7 @@ export async function streamLocalAgent(options: LocalAgentOptions, handlers: Loc
 			baseUrl: options.ollamaHost,
 			model: options.ollamaChatModel,
 			think: options.ollamaThinking,
+			maxRetries: 0,
 		}),
 		tools: createAgentTools(options.app),
 		systemPrompt: DEFAULT_SYSTEM_PROMPT,
