@@ -400,7 +400,8 @@
 }
 
 .porygon-mention-popover,
-.porygon-slash-popover {
+.porygon-slash-popover,
+.porygon-session-popover {
 	position: absolute;
 	left: 20px;
 	right: 20px;
@@ -417,7 +418,8 @@
 }
 
 .porygon-mention-panel,
-.porygon-slash-panel {
+.porygon-slash-panel,
+.porygon-session-panel {
 	display: flex;
 	max-height: min(320px, 50vh);
 	flex-direction: column;
@@ -426,7 +428,8 @@
 }
 
 .porygon-mention-filter,
-.porygon-slash-filter {
+.porygon-slash-filter,
+.porygon-session-filter {
 	width: 100%;
 	flex: 0 0 auto;
 	border: 0;
@@ -437,13 +440,16 @@
 .porygon-mention-filter:hover,
 .porygon-mention-filter:focus,
 .porygon-slash-filter:hover,
-.porygon-slash-filter:focus {
+.porygon-slash-filter:focus,
+.porygon-session-filter:hover,
+.porygon-session-filter:focus {
 	box-shadow: none;
 	background: transparent;
 }
 
 .porygon-mention-results,
-.porygon-slash-results {
+.porygon-slash-results,
+.porygon-session-results {
 	display: flex;
 	min-height: 0;
 	flex-direction: column;
@@ -451,7 +457,8 @@
 }
 
 .porygon-mention-result,
-.porygon-slash-result {
+.porygon-slash-result,
+.porygon-session-result {
 	display: flex;
 	width: 100%;
 	min-height: 36px;
@@ -469,25 +476,30 @@
 .porygon-mention-result:hover,
 .porygon-mention-result.is-selected,
 .porygon-slash-result:hover,
-.porygon-slash-result.is-selected {
+.porygon-slash-result.is-selected,
+.porygon-session-result:hover,
+.porygon-session-result.is-selected {
 	background: var(--background-modifier-hover) !important;
 }
 
 .porygon-mention-result-icon,
-.porygon-slash-result-icon {
+.porygon-slash-result-icon,
+.porygon-session-result-icon {
 	display: flex;
 	flex: 0 0 auto;
 	color: var(--text-muted);
 }
 
 .porygon-mention-result-icon svg,
-.porygon-slash-result-icon svg {
+.porygon-slash-result-icon svg,
+.porygon-session-result-icon svg {
 	width: 16px;
 	height: 16px;
 }
 
 .porygon-mention-result-path,
-.porygon-slash-result-text {
+.porygon-slash-result-text,
+.porygon-session-result-text {
 	max-width: 100%;
 	overflow: hidden;
 	text-align: left;
@@ -495,31 +507,51 @@
 	white-space: nowrap;
 }
 
-.porygon-slash-result-text {
+.porygon-slash-result-text,
+.porygon-session-result-text {
 	display: flex;
 	align-items: baseline;
 	gap: var(--size-2-2);
 }
 
-.porygon-slash-result-syntax {
+.porygon-session-result-text {
+	min-width: 0;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 0;
+}
+
+.porygon-slash-result-syntax,
+.porygon-session-result-title {
 	font-family: var(--font-monospace);
 	font-weight: var(--font-semibold);
 }
 
+.porygon-session-result-title,
+.porygon-session-result-preview {
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 .porygon-slash-result-label,
-.porygon-slash-description {
+.porygon-slash-description,
+.porygon-session-result-preview {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 }
 
 .porygon-mention-empty,
-.porygon-slash-empty {
+.porygon-slash-empty,
+.porygon-session-empty {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 }
 
 .porygon-mention-empty,
-.porygon-slash-empty {
+.porygon-slash-empty,
+.porygon-session-empty {
 	padding: var(--size-2-2);
 }
 

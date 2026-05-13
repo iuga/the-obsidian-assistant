@@ -40,8 +40,15 @@ export interface LocalAgentStreamHandlers {
 	onToolIntent?: (toolIntent: AgentToolCallIntent) => void;
 }
 
+export interface SessionTitleAgentOptions {
+	ollamaHost: string;
+	ollamaChatModel: string;
+	userMessages: string[];
+}
+
 const MODEL_NODE_NAME = "model_request";
 const DEFAULT_SYSTEM_PROMPT = defaultSystemPrompt.trim();
+const SESSION_TITLE_SYSTEM_PROMPT = "Generate a short, concise title (max 6 words) for a conversation that starts with this message. Return ONLY the title, nothing else. Use the user's initial message as context when generating your response.";
 
 export async function streamLocalAgent(options: LocalAgentOptions, handlers: LocalAgentStreamHandlers = {}): Promise<LocalAgentResponse> {
 	const agent = createAgent({
@@ -94,6 +101,20 @@ export async function streamLocalAgent(options: LocalAgentOptions, handlers: Loc
 	}
 
 	return { content, thinking, toolIntents };
+}
+
+export async function generateSessionTitle(options: SessionTitleAgentOptions): Promise<string> {
+	const model = new ChatOllama({
+		baseUrl: options.ollamaHost,
+		model: options.ollamaChatModel,
+		think: false,
+		maxRetries: 0,
+	});
+	const response = await model.invoke([
+		toSystemMessage(SESSION_TITLE_SYSTEM_PROMPT),
+		{ role: "user", content: options.userMessages.join("\n\n") },
+	]);
+	return getMessageText(response).trim();
 }
 
 function getToolIntents(message: AIMessageChunk, toolCallChunks: Map<number, ToolCallChunk>, emittedToolCallIds: Set<string>): AgentToolCallIntent[] {
@@ -161,6 +182,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function getReasoningDelta(message: AIMessageChunk): string {
 	const reasoning = message.additional_kwargs?.reasoning_content;
 	return typeof reasoning === "string" ? reasoning : "";
+}
+
+function getMessageText(message: { content: unknown }): string {
+	if (typeof message.content === "string") {
+		return message.content;
+	}
+
+	if (!Array.isArray(message.content)) {
+		return "";
+	}
+
+	return message.content
+		.map((part) => isRecord(part) && typeof part.text === "string" ? part.text : "")
+		.join("");
 }
 
 function toSystemMessage(content: string): BaseMessageLike {

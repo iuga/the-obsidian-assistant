@@ -1,5 +1,5 @@
 import { ItemView, MarkdownRenderer, Modal, setIcon, TFile, TFolder, WorkspaceLeaf } from "obsidian";
-import { AgentChatMessage, AgentToolCallIntent, streamLocalAgent } from "./agent";
+import { AgentChatMessage, AgentToolCallIntent, generateSessionTitle, streamLocalAgent } from "./agent";
 import PorygonPlugin from "./main";
 import { OllamaHttpClient, OllamaModel } from "./ollama-client";
 import { ONBOARDING_DEFAULTS } from "./settings";
@@ -38,7 +38,7 @@ interface MentionSearchResult {
 	files: TFile[];
 }
 
-type SlashCommandId = "new" | "save";
+type SlashCommandId = "new" | "save" | "sessions";
 
 interface SlashCommand {
 	id: SlashCommandId;
@@ -46,6 +46,33 @@ interface SlashCommand {
 	syntax: string;
 	description: string;
 	icon: string;
+}
+
+interface SessionSummary {
+	file: TFile;
+	id: string;
+	title: string;
+	preview: string;
+}
+
+interface SessionMetadata {
+	id?: string;
+	title?: string;
+}
+
+interface SavedMention {
+	kind: MentionType;
+	path: string;
+	files: string[];
+}
+
+interface MessageMetadata {
+	mentions?: SavedMention[] | MentionedItem[];
+}
+
+interface ParsedSession {
+	metadata: SessionMetadata;
+	messages: ChatMessage[];
 }
 
 interface ChatMessage {
@@ -67,10 +94,14 @@ const SETTING_STEPS: SettingStep[] = [
 ];
 
 const SLASH_COMMANDS: SlashCommand[] = [
-	{ id: "new", label: "New conversation", syntax: "/new", description: "Start a new conversation.", icon: "circle-plus" },
-	{ id: "save", label: "Save conversation", syntax: "/save", description: "Save this conversation to a note.", icon: "save" },
+	{ id: "new", label: "New session", syntax: "/new", description: "Start a new session.", icon: "circle-plus" },
+	{ id: "save", label: "Save session", syntax: "/save", description: "Save this session to a note.", icon: "save" },
+	{ id: "sessions", label: "Sessions", syntax: "/sessions", description: "Load a saved session.", icon: "messages-square" },
 ];
 
+const PORYGON_SESSIONS_FOLDER = "porygon/sessions";
+const PORYGON_METADATA_OPEN = "%%porygon:metadata";
+const PORYGON_METADATA_CLOSE = "%%";
 const MESSAGE_INPUT_PLACEHOLDER = "How can I help you today? - / for commands - @ for mentions";
 const EMPTY_CHAT_QUOTES: [string, ...string[]] = [
 	"What shall we make clearer today?",
@@ -87,6 +118,7 @@ export class PorygonView extends ItemView {
 	private models: OllamaModel[] = [];
 	private messages: ChatMessage[] = [];
 	private chatHistoryEl: HTMLElement | null = null;
+	private composerEl: HTMLElement | null = null;
 	private composerInputEl: HTMLTextAreaElement | null = null;
 	private sendButtonEl: HTMLButtonElement | null = null;
 	private mentionTagsEl: HTMLElement | null = null;
@@ -100,6 +132,14 @@ export class PorygonView extends ItemView {
 	private slashCommandPointerDownHandler: ((event: PointerEvent) => void) | null = null;
 	private filteredSlashCommands: SlashCommand[] = [];
 	private selectedSlashCommandIndex = 0;
+	private sessionPopoverEl: HTMLElement | null = null;
+	private sessionKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
+	private sessionPointerDownHandler: ((event: PointerEvent) => void) | null = null;
+	private sessionResults: SessionSummary[] = [];
+	private allSessionSummaries: SessionSummary[] = [];
+	private selectedSessionIndex = 0;
+	private currentSessionId: string | null = null;
+	private currentSessionTitle = "";
 	private isStreaming = false;
 	private isCheckingHealth = false;
 	private isHealthy = true;
@@ -280,6 +320,7 @@ export class PorygonView extends ItemView {
 
 	private renderComposer(containerEl: HTMLElement): void {
 		const composer = containerEl.createDiv({ cls: "porygon-composer" });
+		this.composerEl = composer;
 		this.mentionTagsEl = composer.createDiv({ cls: "porygon-mention-tags" });
 		this.renderMentionTags();
 		composer.createDiv({ cls: "porygon-attachments" });
@@ -620,7 +661,7 @@ export class PorygonView extends ItemView {
 		}
 
 		if (decision === "yes") {
-			await this.saveConversation();
+			await this.saveSession();
 		}
 
 		this.startNewChat();
@@ -637,11 +678,14 @@ export class PorygonView extends ItemView {
 	}
 
 	private startNewChat(): void {
+		this.currentSessionId = null;
+		this.currentSessionTitle = "";
 		this.messages = [];
 		this.selectedMentions = [];
 		this.renderMentionTags();
 		this.closeMentionPopover();
 		this.closeSlashCommandPopover();
+		this.closeSessionPopover();
 		this.updateSendButtonState();
 		this.renderMessages();
 		this.composerInputEl?.focus();
@@ -1088,8 +1132,7 @@ export class PorygonView extends ItemView {
 
 		return SLASH_COMMANDS.filter((command) =>
 			command.label.toLowerCase().includes(normalizedQuery) ||
-			command.syntax.toLowerCase().includes(normalizedQuery) ||
-			command.description.toLowerCase().includes(normalizedQuery)
+			command.syntax.toLowerCase().includes(normalizedQuery)
 		);
 	}
 
@@ -1103,8 +1146,185 @@ export class PorygonView extends ItemView {
 		}
 
 		if (command.id === "save") {
-			void this.saveConversation();
+			void this.saveSession();
+			return;
 		}
+
+		if (command.id === "sessions") {
+			void this.handleSessionsCommand();
+		}
+	}
+
+	private async handleSessionsCommand(): Promise<void> {
+		if (!this.composerEl) {
+			return;
+		}
+
+		await this.renderSessionPopover(this.composerEl);
+	}
+
+	private async renderSessionPopover(composerEl: HTMLElement): Promise<void> {
+		this.closeSessionPopover();
+		this.closeMentionPopover();
+		this.closeSlashCommandPopover();
+		const popover = composerEl.createDiv({ cls: "porygon-session-popover" });
+		this.sessionPopoverEl = popover;
+		const panel = popover.createDiv({ cls: "porygon-session-panel" });
+		const filterInput = panel.createEl("input", {
+			cls: "porygon-session-filter",
+			attr: { type: "text", placeholder: "Filter sessions..." },
+		});
+		const sessionsEl = panel.createDiv({ cls: "porygon-session-results" });
+		this.allSessionSummaries = await this.getSessionSummaries();
+		const renderSessions = () => this.renderSessionResults(sessionsEl, filterInput.value);
+
+		filterInput.addEventListener("input", () => {
+			this.selectedSessionIndex = 0;
+			renderSessions();
+		});
+		this.sessionKeydownHandler = (event: KeyboardEvent) => this.handleSessionPopoverKeydown(event, sessionsEl, filterInput.value);
+		this.sessionPointerDownHandler = (event: PointerEvent) => this.handleSessionPointerDown(event);
+		window.addEventListener("keydown", this.sessionKeydownHandler, true);
+		window.addEventListener("pointerdown", this.sessionPointerDownHandler, true);
+		renderSessions();
+		filterInput.focus();
+	}
+
+	private async getSessionSummaries(): Promise<SessionSummary[]> {
+		const folder = this.plugin.app.vault.getAbstractFileByPath(PORYGON_SESSIONS_FOLDER);
+		if (!(folder instanceof TFolder)) {
+			return [];
+		}
+
+		const files = folder.children
+			.filter((child): child is TFile => child instanceof TFile && child.extension === "md")
+			.sort((first, second) => second.stat.mtime - first.stat.mtime);
+		return Promise.all(files.map((file) => this.getSessionSummary(file)));
+	}
+
+	private async getSessionSummary(file: TFile): Promise<SessionSummary> {
+		try {
+			const content = await this.plugin.app.vault.cachedRead(file);
+			const parsed = this.parseSession(content);
+			const preview = this.getSessionPreview(parsed.messages);
+			const title = parsed.metadata.title || this.getFallbackSessionTitle(parsed.messages);
+			return {
+				file,
+				id: parsed.metadata.id ?? file.basename,
+				title,
+				preview,
+			};
+		} catch (error) {
+			console.error("Unable to read Porygon session", file.path, error);
+			return { file, id: file.basename, title: "", preview: "" };
+		}
+	}
+
+	private getSessionPreview(messages: ChatMessage[]): string {
+		return messages.find((message) => message.role === "user" && message.content.trim().length > 0)?.content.trim().replace(/\s+/g, " ") ?? "";
+	}
+
+	private renderSessionResults(containerEl: HTMLElement, query: string): void {
+		containerEl.empty();
+		const normalizedQuery = query.trim().toLowerCase();
+		const results = this.allSessionSummaries.filter((session) => this.doesSessionMatch(session, normalizedQuery));
+		this.sessionResults = results;
+		this.selectedSessionIndex = Math.min(this.selectedSessionIndex, Math.max(results.length - 1, 0));
+
+		if (results.length === 0) {
+			containerEl.createDiv({ cls: "porygon-session-empty", text: "No sessions found" });
+			return;
+		}
+
+		results.forEach((session, index) => {
+			const sessionButton = containerEl.createEl("button", {
+				cls: "porygon-session-result",
+				attr: { title: session.file.path, "aria-label": `Load ${session.file.basename}`, type: "button" },
+			});
+			sessionButton.toggleClass("is-selected", index === this.selectedSessionIndex);
+			const iconEl = sessionButton.createSpan({ cls: "porygon-session-result-icon" });
+			setIcon(iconEl, "messages-square");
+			const textEl = sessionButton.createSpan({ cls: "porygon-session-result-text" });
+			textEl.createSpan({ cls: "porygon-session-result-title", text: session.id });
+			textEl.createSpan({ cls: "porygon-session-result-preview", text: session.title || session.preview || session.file.basename });
+			sessionButton.addEventListener("click", (event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				void this.selectSession(session);
+			});
+		});
+	}
+
+	private doesSessionMatch(session: SessionSummary, normalizedQuery: string): boolean {
+		if (!normalizedQuery) {
+			return true;
+		}
+
+		return session.id.toLowerCase().includes(normalizedQuery) ||
+			session.title.toLowerCase().includes(normalizedQuery) ||
+			session.preview.toLowerCase().includes(normalizedQuery) ||
+			session.file.basename.toLowerCase().includes(normalizedQuery);
+	}
+
+	private handleSessionPopoverKeydown(event: KeyboardEvent, containerEl: HTMLElement, query: string): void {
+		if (event.key === "Escape") {
+			event.preventDefault();
+			event.stopPropagation();
+			this.closeSessionPopover();
+			this.composerInputEl?.focus();
+			return;
+		}
+
+		if (event.key === "ArrowDown") {
+			event.preventDefault();
+			event.stopPropagation();
+			this.moveSessionSelection(1, containerEl, query);
+			return;
+		}
+
+		if (event.key === "ArrowUp") {
+			event.preventDefault();
+			event.stopPropagation();
+			this.moveSessionSelection(-1, containerEl, query);
+			return;
+		}
+
+		if (event.key === "Enter") {
+			event.preventDefault();
+			event.stopPropagation();
+			const selectedSession = this.sessionResults[this.selectedSessionIndex];
+			if (selectedSession) {
+				void this.selectSession(selectedSession);
+				return;
+			}
+
+			this.closeSessionPopover();
+			this.composerInputEl?.focus();
+		}
+	}
+
+	private moveSessionSelection(direction: number, containerEl: HTMLElement, query: string): void {
+		if (this.sessionResults.length === 0) {
+			return;
+		}
+
+		this.selectedSessionIndex = (this.selectedSessionIndex + direction + this.sessionResults.length) % this.sessionResults.length;
+		this.renderSessionResults(containerEl, query);
+		const selectedEl = containerEl.querySelector<HTMLElement>(".porygon-session-result.is-selected");
+		selectedEl?.scrollIntoView({ block: "nearest" });
+	}
+
+	private handleSessionPointerDown(event: PointerEvent): void {
+		if (!this.sessionPopoverEl) {
+			return;
+		}
+
+		const target = event.target;
+		if (target instanceof Node && this.sessionPopoverEl.contains(target)) {
+			return;
+		}
+
+		this.closeSessionPopover();
 	}
 
 	private closeSlashCommandPopover(): void {
@@ -1122,6 +1342,24 @@ export class PorygonView extends ItemView {
 		this.slashCommandPopoverEl = null;
 		this.filteredSlashCommands = [];
 		this.selectedSlashCommandIndex = 0;
+	}
+
+	private closeSessionPopover(): void {
+		if (this.sessionKeydownHandler) {
+			window.removeEventListener("keydown", this.sessionKeydownHandler, true);
+			this.sessionKeydownHandler = null;
+		}
+
+		if (this.sessionPointerDownHandler) {
+			window.removeEventListener("pointerdown", this.sessionPointerDownHandler, true);
+			this.sessionPointerDownHandler = null;
+		}
+
+		this.sessionPopoverEl?.remove();
+		this.sessionPopoverEl = null;
+		this.sessionResults = [];
+		this.allSessionSummaries = [];
+		this.selectedSessionIndex = 0;
 	}
 
 	private getUnavailableMentionPaths(): Set<string> {
@@ -1297,20 +1535,23 @@ export class PorygonView extends ItemView {
 		}));
 	}
 
-	private async saveConversation(): Promise<void> {
+	private async saveSession(): Promise<void> {
 		const visibleMessages = this.messages.filter((message): message is ChatMessage & { role: "user" | "porygon" } => message.role === "user" || message.role === "porygon");
 		const firstMessage = visibleMessages[0];
 		if (!firstMessage) {
-			this.messages.push({ role: "warning", content: "No conversation to save." });
+			this.messages.push({ role: "warning", content: "No session to save." });
 			this.renderMessages();
 			return;
 		}
 
 		try {
-			const timestamp = this.getConversationTimestamp(firstMessage);
-			const filename = `porygon/conversation_${timestamp}.md`;
-			const content = this.formatConversationForSave(visibleMessages);
-			await this.ensureFolderExists("porygon");
+			const sessionId = this.currentSessionId ?? this.getSessionTimestamp(firstMessage);
+			const title = await this.getTitleForSave(visibleMessages);
+			this.currentSessionId = sessionId;
+			this.currentSessionTitle = title;
+			const filename = `${PORYGON_SESSIONS_FOLDER}/${sessionId}.md`;
+			const content = this.formatSessionForSave(sessionId, title, visibleMessages);
+			await this.ensureFolderExists(PORYGON_SESSIONS_FOLDER);
 			const existingFile = this.plugin.app.vault.getAbstractFileByPath(filename);
 
 			if (existingFile instanceof TFile) {
@@ -1324,13 +1565,283 @@ export class PorygonView extends ItemView {
 		}
 	}
 
-	private getConversationTimestamp(firstMessage: ChatMessage): string {
+	private getSessionTimestamp(firstMessage: ChatMessage): string {
 		const timestampSource = firstMessage.createdAt ?? new Date().toISOString();
 		return timestampSource.replace(/[:.]/g, "-");
 	}
 
-	private formatConversationForSave(messages: Array<ChatMessage & { role: "user" | "porygon" }>): string {
-		return messages.map((message) => `${message.role === "user" ? "User" : "Porygon"}: \n${message.content}`).join("\n\n");
+	private formatSessionForSave(sessionId: string, title: string, messages: Array<ChatMessage & { role: "user" | "porygon" }>): string {
+		const sessionMetadata = this.formatMetadataBlock({ id: sessionId, title });
+		const messageBlocks = messages.map((message) => this.formatMessageForSave(message));
+		return [sessionMetadata, ...messageBlocks].join("\n\n");
+	}
+
+	private async getTitleForSave(messages: ChatMessage[]): Promise<string> {
+		if (this.currentSessionTitle.trim()) {
+			return this.currentSessionTitle.trim();
+		}
+
+		const userMessages = messages
+			.filter((message) => message.role === "user")
+			.map((message) => message.content.trim())
+			.filter((content) => content.length > 0);
+		if (userMessages.length === 0) {
+			return "";
+		}
+
+		try {
+			return this.sanitizeGeneratedSessionTitle(await generateSessionTitle({
+				ollamaHost: this.getOllamaBaseUrl(),
+				ollamaChatModel: this.plugin.settings.ollamaChatModel,
+				userMessages,
+			})) || this.getFallbackSessionTitle(messages);
+		} catch (error) {
+			console.error("Unable to generate Porygon session title", error);
+			return this.getFallbackSessionTitle(messages);
+		}
+	}
+
+	private sanitizeGeneratedSessionTitle(title: string): string {
+		return title
+			.trim()
+			.replace(/^['"`]+|['"`]+$/g, "")
+			.replace(/\s+/g, " ")
+			.split(" ")
+			.slice(0, 6)
+			.join(" ");
+	}
+
+	private getFallbackSessionTitle(messages: ChatMessage[]): string {
+		const firstUserMessage = messages.find((message) => message.role === "user" && message.content.trim().length > 0);
+		return firstUserMessage?.content.trim().replace(/\s+/g, " ").slice(0, 30) ?? "";
+	}
+
+	private formatMessageForSave(message: ChatMessage & { role: "user" | "porygon" }): string {
+		const label = message.role === "user" ? "User" : "Porygon";
+		const messageBlock = `${label}: \n${message.content}`;
+		if (message.role !== "user" || !message.mentions || message.mentions.length === 0) {
+			return messageBlock;
+		}
+
+		return `${this.formatMetadataBlock({ mentions: message.mentions.map((mention) => this.toSavedMention(mention)) })}\n${messageBlock}`;
+	}
+
+	private toSavedMention(mention: MentionedItem): SavedMention {
+		return {
+			kind: mention.type,
+			path: mention.path,
+			files: mention.files.map((file) => file.path),
+		};
+	}
+
+	private formatMetadataBlock(metadata: Record<string, unknown>): string {
+		return `${PORYGON_METADATA_OPEN}\n${JSON.stringify(metadata, null, 2)}\n${PORYGON_METADATA_CLOSE}`;
+	}
+
+	private async selectSession(session: SessionSummary): Promise<void> {
+		this.closeSessionPopover();
+		if (this.hasConversationContent()) {
+			const decision = await this.confirmSaveBeforeNewConversation();
+			if (decision === "cancel") {
+				this.composerInputEl?.focus();
+				return;
+			}
+
+			if (decision === "yes") {
+				await this.saveSession();
+			}
+		}
+
+		await this.loadSession(session.file);
+	}
+
+	private async loadSession(file: TFile): Promise<void> {
+		try {
+			const content = await this.plugin.app.vault.cachedRead(file);
+			const parsed = this.parseSession(content);
+			this.currentSessionId = parsed.metadata.id ?? file.basename;
+			this.currentSessionTitle = parsed.metadata.title ?? "";
+			this.messages = await this.rehydrateSessionMessages(parsed.messages);
+			this.selectedMentions = [];
+			if (this.composerInputEl) {
+				this.composerInputEl.value = "";
+			}
+			this.renderMentionTags();
+			this.closeMentionPopover();
+			this.closeSlashCommandPopover();
+			this.updateSendButtonState();
+			this.renderMessages();
+			this.composerInputEl?.focus();
+		} catch (error) {
+			this.messages.push({ role: "warning", content: error instanceof Error ? error.message : String(error) });
+			this.renderMessages();
+		}
+	}
+
+	private async rehydrateSessionMessages(messages: ChatMessage[]): Promise<ChatMessage[]> {
+		const rehydratedMessages: ChatMessage[] = [];
+		for (const message of messages) {
+			rehydratedMessages.push(message);
+			if (message.role !== "user" || !message.mentions || message.mentions.length === 0) {
+				continue;
+			}
+
+			try {
+				rehydratedMessages.push(...await this.createFileContextMessages(message.mentions));
+			} catch (error) {
+				console.error("Unable to load Porygon session mentions", message.mentions, error);
+			}
+		}
+		return rehydratedMessages;
+	}
+
+	private parseSession(content: string): ParsedSession {
+		const lines = content.split("\n");
+		const messages: ChatMessage[] = [];
+		const metadata: SessionMetadata = {};
+		let pendingMetadata: MessageMetadata | SessionMetadata | null = null;
+		let currentMessage: ChatMessage | null = null;
+		let hasSeenMessage = false;
+
+		const flushCurrentMessage = () => {
+			if (!currentMessage) {
+				return;
+			}
+
+			currentMessage.content = currentMessage.content.replace(/\n$/, "");
+			messages.push(currentMessage);
+			currentMessage = null;
+		};
+
+		const createMessage = (role: "user" | "porygon", initialContent: string): ChatMessage => {
+			hasSeenMessage = true;
+			const message: ChatMessage = { role, content: initialContent, mentions: role === "user" ? this.getMetadataMentions(pendingMetadata) : undefined };
+			pendingMetadata = null;
+			return message;
+		};
+
+		for (let index = 0; index < lines.length; index += 1) {
+			const line = lines[index] ?? "";
+			if (line === PORYGON_METADATA_OPEN) {
+				flushCurrentMessage();
+				const metadataLines: string[] = [];
+				index += 1;
+				while (index < lines.length && lines[index] !== PORYGON_METADATA_CLOSE) {
+					metadataLines.push(lines[index] ?? "");
+					index += 1;
+				}
+				const parsedMetadata = this.parseMetadataBlock(metadataLines.join("\n"));
+				if (!hasSeenMessage && !Array.isArray(parsedMetadata.mentions)) {
+					metadata.id = typeof parsedMetadata.id === "string" ? parsedMetadata.id : metadata.id;
+					metadata.title = typeof parsedMetadata.title === "string" ? parsedMetadata.title : metadata.title;
+				} else {
+					pendingMetadata = parsedMetadata;
+				}
+				continue;
+			}
+
+			if (line === "User:" || line === "User: ") {
+				flushCurrentMessage();
+				currentMessage = createMessage("user", "");
+				continue;
+			}
+
+			if (line.startsWith("User: ") && !currentMessage) {
+				flushCurrentMessage();
+				currentMessage = createMessage("user", line.slice("User: ".length));
+				continue;
+			}
+
+			if (line === "Porygon:" || line === "Porygon: ") {
+				flushCurrentMessage();
+				currentMessage = createMessage("porygon", "");
+				continue;
+			}
+
+			if (line.startsWith("Porygon: ") && !currentMessage) {
+				flushCurrentMessage();
+				currentMessage = createMessage("porygon", line.slice("Porygon: ".length));
+				continue;
+			}
+
+			if (currentMessage !== null) {
+				const existingContent = currentMessage.content;
+				currentMessage.content = `${existingContent}${existingContent ? "\n" : ""}${line}`;
+			}
+		}
+
+		flushCurrentMessage();
+		return { metadata, messages };
+	}
+
+	private parseMetadataBlock(content: string): Record<string, unknown> {
+		try {
+			const metadata: unknown = JSON.parse(content);
+			if (this.isRecord(metadata)) {
+				return metadata;
+			}
+		} catch (error) {
+			console.error("Unable to parse Porygon session metadata", error);
+		}
+
+		return {};
+	}
+
+	private getMetadataMentions(metadata: MessageMetadata | SessionMetadata | null): MentionedItem[] | undefined {
+		if (!this.isRecord(metadata) || !Array.isArray(metadata.mentions)) {
+			return undefined;
+		}
+
+		const mentions = metadata.mentions.flatMap((mention): MentionedItem[] => {
+			const parsedMention = this.parseSavedMention(mention) ?? this.parseLegacyMentionedItem(mention);
+			return parsedMention ? [parsedMention] : [];
+		});
+		return mentions.length > 0 ? mentions : undefined;
+	}
+
+	private parseSavedMention(value: unknown): MentionedItem | null {
+		if (!this.isRecord(value) || !this.isMentionType(value.kind) || typeof value.path !== "string" || !Array.isArray(value.files)) {
+			return null;
+		}
+
+		const files = value.files.flatMap((filePath): MentionedFile[] => {
+			if (typeof filePath !== "string") {
+				console.error("Unable to load Porygon mention file metadata", filePath);
+				return [];
+			}
+
+			return [{ path: filePath, basename: this.getBasenameFromPath(filePath) }];
+		});
+		return { type: value.kind, path: value.path, basename: this.getBasenameFromPath(value.path), files };
+	}
+
+	private parseLegacyMentionedItem(value: unknown): MentionedItem | null {
+		if (!this.isRecord(value) || !this.isMentionType(value.type) || typeof value.path !== "string" || typeof value.basename !== "string" || !Array.isArray(value.files)) {
+			console.error("Unable to load Porygon mention metadata", value);
+			return null;
+		}
+
+		const files = value.files.flatMap((file): MentionedFile[] => {
+			if (!this.isRecord(file) || typeof file.path !== "string" || typeof file.basename !== "string") {
+				console.error("Unable to load Porygon mention file metadata", file);
+				return [];
+			}
+
+			return [{ path: file.path, basename: file.basename }];
+		});
+		return { type: value.type, path: value.path, basename: value.basename, files };
+	}
+
+	private isMentionType(value: unknown): value is MentionType {
+		return value === "note" || value === "folder" || value === "active-note";
+	}
+
+	private isRecord(value: unknown): value is Record<string, unknown> {
+		return typeof value === "object" && value !== null && !Array.isArray(value);
+	}
+
+	private getBasenameFromPath(path: string): string {
+		return (path.split("/").last() ?? path).replace(/\.md$/i, "");
 	}
 
 	private async ensureFolderExists(path: string): Promise<void> {

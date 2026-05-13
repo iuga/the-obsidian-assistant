@@ -27,3 +27,10 @@ The mention popup now opens from `@`, focuses a filter, uses left-aligned rows w
 
 ## 0.2.6: Porygon chat responsiveness, vault rename, and publishing readiness
 Porygon improved responsiveness by immediately showing a `Thinking...` Porygon answer bubble until the first streamed token, reasoning delta, or tool intent arrives; added a centered deterministic daily empty-chat quote and a clearer composer placeholder for `/` commands and `@` mentions; introduced a safe `rename(intent, source_path, destination_path)` agent tool that uses Obsidian `FileManager.renameFile` and documents its privacy impact; and addressed Obsidian community plugin publishing feedback by removing interval-based Ollama polling, using event-based health checks, replacing newer APIs that exceeded `minAppVersion`, fixing UI construction warnings, and adding an attested GitHub Actions release workflow for `main.js`, `manifest.json`, and `styles.css`.
+
+## 0.2.7: Obsidian plugin publishing and polish
+
+## 0.2.8: Obsidian plugin publishing and polish
+
+## 0.2.9: Saved sessions and mention-aware reloads
+Porygon added a `/sessions` command for loading saved chats from `porygon/sessions/`, renamed saved conversations to sessions, and changed `/save` to write `{session-id}.md` files with top-level metadata containing the session id and title. Session files now preserve per-message mention metadata in compact `kind`/`path`/`files` blocks so note and folder mentions can be rehydrated in order when a session is loaded; loading a session prompts to save the active chat first, restores visible messages and hidden file context, and logs malformed or missing mention data without blocking the load. Untitled sessions now generate a concise human-readable title from user messages through a lightweight LangChain/Ollama title generator, with a local fallback if generation fails.
