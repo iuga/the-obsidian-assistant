@@ -33,7 +33,7 @@ export default class PorygonPlugin extends Plugin {
 		}
 
 		await leaf.setViewState({ type: PORYGON_VIEW_TYPE, active: true });
-		await this.app.workspace.revealLeaf(leaf);
+		this.app.workspace.rightSplit.expand();
 	}
 
 	async loadSettings(): Promise<void> {
