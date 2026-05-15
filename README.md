@@ -38,10 +38,7 @@ The first time you open Porygon, the onboarding flow will guide you through conf
 
 ### Semantic index settings
 
-Porygon stores semantic index data under `raw/` in the plugin folder by default. You can change this plugin-relative storage path and add vault-relative files or folders to ignore from indexing in the Porygon Assistant settings page.
-
-> [!NOTE]
-> If you use Obsidian Sync, the vector store binaries might take up a lot of space due to the version history. Exclude the Porygon plugin `raw/` folder in the Obsidian Sync settings to avoid this.
+Porygon stores semantic index data locally in your browser's IndexedDB storage. You can exclude vault-relative files or folders from indexing in the Porygon Assistant settings page.
 
 
 ## Privacy
@@ -52,6 +49,6 @@ Porygon does not add telemetry. When you send a message, the following data may 
 - The latest content of notes you explicitly mention
 - Prior conversation history in the current Porygon session
 - Tool results, including vault paths returned by list, search, edit, view, or rename operations
-- Note content indexed for semantic search in future RAG features
+- Note content indexed for semantic search
 
 If your Ollama host is local, this stays on your machine. If you configure a remote Ollama host, data is sent to that host.

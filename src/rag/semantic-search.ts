@@ -3,23 +3,28 @@ import { PorygonPluginSettings } from "../settings";
 import { arrayBufferToFloat32Array, RagIndexedDbStore } from "./indexeddb-store";
 import { RagSemanticSearchOptions, RagSemanticSearchResult } from "./types";
 
-const DEFAULT_SEARCH_LIMIT = 8;
+export const DEFAULT_SEMANTIC_SEARCH_LIMIT = 8;
 
 export class RagSemanticSearchService {
 	private settings: PorygonPluginSettings;
 	private store: RagIndexedDbStore;
+	private cachedEmbeddings: { host: string; model: string; client: OllamaEmbeddings } | null = null;
 
-	constructor(settings: PorygonPluginSettings, store = new RagIndexedDbStore()) {
+	constructor(settings: PorygonPluginSettings, store: RagIndexedDbStore) {
 		this.settings = settings;
 		this.store = store;
 	}
 
 	updateSettings(settings: PorygonPluginSettings): void {
+		if (this.settings.ollamaHost !== settings.ollamaHost || this.settings.ollamaEmbeddingModel !== settings.ollamaEmbeddingModel) {
+			this.cachedEmbeddings = null;
+		}
 		this.settings = settings;
 	}
 
 	async search(options: RagSemanticSearchOptions): Promise<RagSemanticSearchResult[]> {
 		const query = options.query.trim();
+		const limit = Math.max(1, options.limit ?? DEFAULT_SEMANTIC_SEARCH_LIMIT);
 		if (!query || !this.settings.ollamaHost || !this.settings.ollamaEmbeddingModel) {
 			console.debug("[Porygon RAG] semantic search skipped", {
 				query,
@@ -31,7 +36,7 @@ export class RagSemanticSearchService {
 
 		console.debug("[Porygon RAG] semantic search", {
 			query,
-			limit: options.limit ?? DEFAULT_SEARCH_LIMIT,
+			limit,
 			embeddingModel: this.settings.ollamaEmbeddingModel,
 		});
 
@@ -45,10 +50,7 @@ export class RagSemanticSearchService {
 			return [];
 		}
 
-		const embeddings = new OllamaEmbeddings({
-			baseUrl: this.settings.ollamaHost,
-			model: this.settings.ollamaEmbeddingModel,
-		});
+		const embeddings = this.getEmbeddingsClient();
 		const queryVector = new Float32Array(await embeddings.embedQuery(query));
 		const scored = vectors
 			.map((vector) => ({
@@ -57,7 +59,7 @@ export class RagSemanticSearchService {
 			}))
 			.filter((result) => Number.isFinite(result.score))
 			.sort((left, right) => right.score - left.score)
-			.slice(0, Math.max(1, options.limit ?? DEFAULT_SEARCH_LIMIT));
+			.slice(0, limit);
 
 		const chunks = await this.store.getChunks(scored.map((result) => result.chunkId));
 		const chunksById = new Map(chunks.map((chunk) => [chunk.id, chunk]));
@@ -87,6 +89,19 @@ export class RagSemanticSearchService {
 			})),
 		});
 		return results;
+	}
+
+	private getEmbeddingsClient(): OllamaEmbeddings {
+		const host = this.settings.ollamaHost;
+		const model = this.settings.ollamaEmbeddingModel;
+		if (!this.cachedEmbeddings || this.cachedEmbeddings.host !== host || this.cachedEmbeddings.model !== model) {
+			this.cachedEmbeddings = {
+				host,
+				model,
+				client: new OllamaEmbeddings({ baseUrl: host, model }),
+			};
+		}
+		return this.cachedEmbeddings.client;
 	}
 }
 

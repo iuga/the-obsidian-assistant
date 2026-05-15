@@ -15,9 +15,6 @@ export interface RagChunkRecord {
 	chunkIndex: number;
 	text: string;
 	title: string;
-	heading?: string;
-	tags: string[];
-	links: string[];
 	mtime: number;
 	size: number;
 	embeddingModel: string;

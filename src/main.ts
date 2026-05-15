@@ -1,6 +1,6 @@
 import { Plugin, TFile, WorkspaceLeaf } from "obsidian";
 import { PorygonView, PORYGON_VIEW_TYPE } from "./porygon-view";
-import { RagIndexer, RagSemanticSearchService } from "./rag";
+import { RagIndexedDbStore, RagIndexer, RagSemanticSearchService } from "./rag";
 import { PorygonPluginSettings, DEFAULT_SETTINGS, LegacyPorygonPluginSettings } from "./settings";
 import { PorygonSettingTab } from "./settings-tab";
 
@@ -8,11 +8,13 @@ export default class PorygonPlugin extends Plugin {
 	settings: PorygonPluginSettings;
 	ragIndexer: RagIndexer;
 	ragSemanticSearch: RagSemanticSearchService;
+	private ragStore: RagIndexedDbStore;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
-		this.ragIndexer = new RagIndexer(this.app, this.settings);
-		this.ragSemanticSearch = new RagSemanticSearchService(this.settings);
+		this.ragStore = new RagIndexedDbStore();
+		this.ragIndexer = new RagIndexer(this.app, this.settings, this.ragStore);
+		this.ragSemanticSearch = new RagSemanticSearchService(this.settings, this.ragStore);
 
 		this.registerView(
 			PORYGON_VIEW_TYPE,
@@ -25,7 +27,14 @@ export default class PorygonPlugin extends Plugin {
 		});
 
 		this.registerRagIndexEvents();
-		void this.ragIndexer.reconcile();
+		this.app.workspace.onLayoutReady(() => {
+			void this.ragIndexer.reconcile();
+		});
+	}
+
+	onunload(): void {
+		this.ragIndexer?.dispose();
+		void this.ragStore?.close();
 	}
 
 	async activateView(): Promise<void> {
@@ -48,12 +57,13 @@ export default class PorygonPlugin extends Plugin {
 		const savedSettings = await this.loadData() as LegacyPorygonPluginSettings | null;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, savedSettings);
 		delete (this.settings as LegacyPorygonPluginSettings).chatSystemPrompt;
+		delete (this.settings as LegacyPorygonPluginSettings).ragDatabasePath;
 	}
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
-		this.ragIndexer?.updateSettings(this.settings);
-		this.ragSemanticSearch?.updateSettings(this.settings);
+		this.ragIndexer.updateSettings(this.settings);
+		this.ragSemanticSearch.updateSettings(this.settings);
 	}
 
 	private registerRagIndexEvents(): void {

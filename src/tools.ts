@@ -1,9 +1,10 @@
 import { tool } from "@langchain/core/tools";
 import { App, normalizePath, prepareSimpleSearch, TFile, TFolder } from "obsidian";
-import { RagIndexProgress, RagSemanticSearchService } from "./rag";
+import { DEFAULT_SEMANTIC_SEARCH_LIMIT, RagIndexProgress, RagSemanticSearchService } from "./rag";
 import { z } from "zod";
 
 const DEFAULT_VIEW_LIMIT = 2000;
+const SEMANTIC_SNIPPET_MAX_CHARS = 320;
 const MAX_VIEW_SIZE_BYTES = 200 * 1024;
 const MAX_VIEW_LINE_LENGTH = 2000;
 
@@ -192,9 +193,9 @@ export function createEditTool(app: App) {
 	);
 }
 
-export function createSemanticSearchTool(semanticSearch: RagSemanticSearchService, getProgress: () => RagIndexProgress) {
+export function createSemanticSearchTool(app: App, semanticSearch: RagSemanticSearchService, getProgress: () => RagIndexProgress) {
 	return tool(
-		async ({ query, limit = 8 }: { query: string; limit?: number }): Promise<string> => {
+		async ({ query, limit = DEFAULT_SEMANTIC_SEARCH_LIMIT }: { query: string; limit?: number }): Promise<string> => {
 			const results = await semanticSearch.search({ query, limit });
 			if (results.length === 0) {
 				return JSON.stringify({ results: [], message: getSemanticSearchFallbackMessage(getProgress()) });
@@ -203,11 +204,11 @@ export function createSemanticSearchTool(semanticSearch: RagSemanticSearchServic
 			return JSON.stringify({
 				results: results.map((result) => ({
 					path: result.path,
-					wikilink: `[[${result.path.replace(/\.md$/, "")}]]`,
+					wikilink: buildSemanticWikilink(app, result.path),
 					title: result.title,
 					chunk_index: result.chunkIndex,
 					score: result.score,
-					snippet: result.text,
+					snippet: truncateSnippet(result.text),
 				})),
 			});
 		},
@@ -217,10 +218,27 @@ export function createSemanticSearchTool(semanticSearch: RagSemanticSearchServic
 			schema: z.object({
 				intent: intentSchema,
 				query: z.string().describe("Natural-language description of the vault information to find."),
-				limit: z.number().int().min(1).max(20).optional().default(8).describe("Maximum number of matching chunks to return. Defaults to 8."),
+				limit: z.number().int().min(1).max(20).optional().default(DEFAULT_SEMANTIC_SEARCH_LIMIT).describe(`Maximum number of matching chunks to return. Defaults to ${DEFAULT_SEMANTIC_SEARCH_LIMIT}.`),
 			}),
 		}
 	);
+}
+
+function buildSemanticWikilink(app: App, path: string): string {
+	const file = app.vault.getAbstractFileByPath(path);
+	if (file instanceof TFile) {
+		return `[[${app.metadataCache.fileToLinktext(file, "", true)}]]`;
+	}
+
+	return `[[${path.replace(/\.md$/, "")}]]`;
+}
+
+function truncateSnippet(text: string): string {
+	if (text.length <= SEMANTIC_SNIPPET_MAX_CHARS) {
+		return text;
+	}
+
+	return `${text.slice(0, SEMANTIC_SNIPPET_MAX_CHARS)}…`;
 }
 
 export function createRenameTool(app: App) {
@@ -276,7 +294,7 @@ export function createRenameTool(app: App) {
 }
 
 export function createAgentTools(app: App, semanticSearch: RagSemanticSearchService, getIndexProgress: () => RagIndexProgress) {
-	return [currentTimestampTool, createSemanticSearchTool(semanticSearch, getIndexProgress), createSearchTool(app), createListTool(app), createViewTool(app), createEditTool(app), createRenameTool(app)];
+	return [currentTimestampTool, createSemanticSearchTool(app, semanticSearch, getIndexProgress), createSearchTool(app), createListTool(app), createViewTool(app), createEditTool(app), createRenameTool(app)];
 }
 
 function getSemanticSearchFallbackMessage(progress: RagIndexProgress): string {

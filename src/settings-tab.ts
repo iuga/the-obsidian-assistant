@@ -89,19 +89,8 @@ export class PorygonSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 
-		this.renderSectionHeading(containerEl, "Semantic search", "Configure local RAG storage and indexing exclusions.");
+		this.renderSectionHeading(containerEl, "Semantic search", "Configure local semantic indexing.");
 		this.renderSemanticIndexStatus(containerEl, this.plugin.ragIndexer.getProgress());
-
-		new Setting(containerEl)
-			.setName("Semantic index storage path")
-			.setDesc("Plugin-relative folder for semantic index files.")
-			.addText((text) => text
-				.setPlaceholder(ONBOARDING_DEFAULTS.ragDatabasePath)
-				.setValue(this.plugin.settings.ragDatabasePath)
-				.onChange(async (value) => {
-					this.plugin.settings.ragDatabasePath = value.trim() || ONBOARDING_DEFAULTS.ragDatabasePath;
-					await this.plugin.saveSettings();
-				}));
 
 		const ignoredPathsSetting = new Setting(containerEl)
 			.setName("Ignored semantic index paths")
