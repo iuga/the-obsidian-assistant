@@ -1444,6 +1444,8 @@ export class PorygonView extends ItemView {
 			};
 			await streamLocalAgent({
 				app: this.plugin.app,
+				semanticSearch: this.plugin.ragSemanticSearch,
+				getIndexProgress: () => this.plugin.ragIndexer.getProgress(),
 				ollamaHost: this.getOllamaBaseUrl(),
 				ollamaChatModel: this.plugin.settings.ollamaChatModel,
 				ollamaThinking: this.plugin.settings.ollamaThinking,

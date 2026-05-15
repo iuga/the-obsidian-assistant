@@ -6,6 +6,8 @@ export interface PorygonPluginSettings {
 	ollamaEmbeddingModel: string;
 	ollamaThinking: boolean;
 	showToolUsage: boolean;
+	ragDatabasePath: string;
+	ragIgnoredPaths: string;
 	personalPrompt: string;
 }
 
@@ -14,6 +16,7 @@ export interface LegacyPorygonPluginSettings extends Partial<PorygonPluginSettin
 }
 
 export const DEFAULT_PERSONAL_PROMPT = defaultPersonalPrompt.trim();
+export const DEFAULT_RAG_DATABASE_PATH = "raw/";
 
 export const DEFAULT_SETTINGS: PorygonPluginSettings = {
 	ollamaHost: "",
@@ -21,6 +24,8 @@ export const DEFAULT_SETTINGS: PorygonPluginSettings = {
 	ollamaEmbeddingModel: "",
 	ollamaThinking: false,
 	showToolUsage: false,
+	ragDatabasePath: DEFAULT_RAG_DATABASE_PATH,
+	ragIgnoredPaths: "",
 	personalPrompt: DEFAULT_PERSONAL_PROMPT,
 };
 
@@ -30,5 +35,7 @@ export const ONBOARDING_DEFAULTS: PorygonPluginSettings = {
 	ollamaEmbeddingModel: "nomic-embed-text",
 	ollamaThinking: false,
 	showToolUsage: false,
+	ragDatabasePath: DEFAULT_RAG_DATABASE_PATH,
+	ragIgnoredPaths: "",
 	personalPrompt: DEFAULT_PERSONAL_PROMPT,
 };
